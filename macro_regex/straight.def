@@ -1,0 +1,90 @@
+# ---------- Straight -----------------------------
+subcode:: c_support_subs
+    $sub build_straight($startstate)
+	# -- buildup "and" "or" list
+	my @threadstack;
+	my $p=["and"]
+	push @threadstack, {state=>$startstate, offset=>0, output=>$p};
+	my %state_hash
+	$while my $thread=pop @threadstack
+	    my $state=$thread->{state};
+	    my $off=$thread->{offset};
+	    my $rout=$thread->{output};
+	    $while 1
+		my $position
+		$call regex_get_position
+		my @str_buffer
+		$while $state->{c} !~ /^(Match|Split|AnyChar|Class|-..|\\\d)/
+		    push @str_buffer, $state->{c}
+		    $state=$state->{"out1"};
+		$call regex_get_str
+
+		$call straight_hash
+		$if $state->{c} eq "Match"
+		    last;
+		$elsif $state->{c} eq "Split"
+		    my ($s1, $s2)=(["and"], ["and"]);
+		    push @$rout, ["or", $s1, $s2];
+		    push @threadstack, {state=>$state->{"out1"}, offset=>$off, output=>$s1};
+		    push @threadstack, {state=>$state->{"out2"}, offset=>$off, output=>$s2};
+		    last;
+		$elsif $state->{c} eq "AnyChar"
+		    $state=$state->{"out1"};
+		    $off++;
+		$elsif $state->{c} eq "Class"
+		    $state=$state->{"out1"};
+		    $off++;
+		$elif $state->{c} =~/^-(.)(.)/
+		    push @$rout, "$var\[$position\]>='$1' && $var\[$position\]<='$2'"
+		    $state=$state->{"out1"};
+		    $off++;
+	return regex_straight($p)
+
+    $sub regex_straight
+	my $a=shift;
+	$if !ref($a)
+	    return $a;
+	$elsif ref($a) eq "ARRAY"
+	    my $t=shift(@$a);
+	    my $sep;
+	    my @tlist;
+	    $foreach my $b in @$a
+		push @tlist, regex_straight($b);
+	    $if $t eq "and"
+		$if @tlist==1 and $tlist[0]=~/^\((.*)\)$/
+		    return $1;
+		$else
+		    return join(" && ", @tlist);
+	    $elsif $t eq "or"
+		return "(".join(" || ", @tlist).")";
+
+
+subcode: straight_hash
+    $if $state_hash{$state}
+	return undef
+    $else
+	$state_hash{$state}=1
+
+subcode: regex_get_position
+    $if !$pos
+	$position=$off;
+    $elsif $pos=~/^\d+/
+	$position=$pos+$off;
+    $elif $off
+	$position="$pos+$off";
+    $else
+	$position=$pos;
+
+subcode: regex_get_str
+    my $n=@str_buffer
+    $if $n>2
+	my $s=join '', @str_buffer
+	push @$rout, "strncmp($var+$position, \"$s\", $n)==0"
+	$off+=$n
+	$call regex_get_position
+    $else
+	$for $i=0:$n
+	    push @$rout, "$var\[$position\]=='$str_buffer[$i]'"
+	    $off++
+	    $call regex_get_position
+

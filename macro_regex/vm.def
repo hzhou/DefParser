@@ -1,0 +1,77 @@
+# ---------------- REGEX VM -----------------------
+subcode:: _autoload
+    # VM is a list of [opcode,char,n_out1,n_out2]
+    $sub build_vm($startstate)
+	my @threadstack;
+	push @threadstack, $startstate;
+
+	my @vm;
+	my $count;
+	my %address;
+	$while my $state=pop @threadstack
+	    $if defined $address{$state}
+		next;
+	    $while 1
+		$if defined $address{$state}
+		    push @vm, ["Jmp", 0, $state, 0];
+		    last;
+		$else
+		    $address{$state}=$#vm+1;
+		    $call state_to_vm
+		    $count++;
+		    $if $count>1000
+			die "VM too long\n"
+	# -- patch labels
+	$foreach my $l  in @vm
+	    $if $l->[0] eq "Jmp"
+		$l->[2]=$address{$l->[2]};
+	    $elsif $l->[0] eq "Split"
+		$l->[2]=$address{$l->[2]};
+		$l->[3]=$address{$l->[3]};
+	return \@vm;
+
+subcode: state_to_vm
+    $if $state->{c} eq "Match-(.*)"
+	push @vm,  ["Match", $1, 0, 0];
+	last;
+    $elsif $state->{c} eq "Split"
+	push @vm, ["Split", 0, $state->{out1}, $state->{out2}];
+	push @threadstack, $state->{out1};
+	push @threadstack, $state->{out2};
+	last;
+    $elsif $state->{c} eq "AnyChar"
+	push @vm,  ["AnyChar", 0, 0, 0];
+	$state=$state->{out1};
+    $elsif $state->{c} =~/-(.)(.)/
+	push @vm,  ["Range", 0, "'$1'", "'$2'"];
+	$state=$state->{out1};
+    $elsif $state->{c} =~/class-(.)/
+	push @vm,  ["Class", "'$1'", 0, 0];
+	$state=$state->{out1};
+    $else
+	push @vm,  ["Char", "'$state->{c}'", 0, 0];
+	$state=$state->{out1};
+
+# --------
+subcode: dump_vm_c(var, out)
+    $call vm_hash_labels, $vm
+    my $n=@$vm;
+    push @$(out), "struct VMInst $(var)[$n]= {"
+    my $addr=0
+    $foreach $l in @$vm
+	my $t=join(", ", @$l)
+	$if $labelhash{$addr}
+	    push @$(out), "    /* $addr */"
+	push @$(out), "    $t,"
+	$addr++
+    push @$(out), "};"
+
+subcode: vm_hash_labels(vm)
+    my %labelhash
+    $foreach $l in @$(vm)
+	$if $l->[0] eq "Jmp"
+	    $labelhash{$l->[2]}=1
+	$elif $l->[0] eq "Split"
+	    $labelhash{$l->[2]}=1
+	    $labelhash{$l->[3]}=1
+

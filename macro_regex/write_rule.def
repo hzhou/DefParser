@@ -1,0 +1,204 @@
+include: macro_regex/first_set.def
+
+subcode: parse_grammar
+    &call topdown_loop, name, $top_symbol
+	my $rulelist=$rules{$name}
+	print "fncode: parse_$name\n"
+	my $indent=1
+	$if @$rulelist==1
+	    do_rule($rulelist->[0], $indent, \@name_list)
+	$else
+	    $call check_left_factors
+
+	    my @i_list
+	    $for $i=0:@$rulelist
+		push @i_list, $i
+	    do_rule_pre_factor(0, $rulelist, \@i_list, $indent, \@name_list)
+	print "\n"
+
+subcode:: _autoload
+    $sub do_rule($rule, $indent, $nonterm_list)
+	my $type=$rule->{type}
+	$if $type=~/^(keyword|term)$/
+	    $call do_print, "match($rule->{value})"
+	$elif $type eq "nonterm"
+	    $call do_print, "parse_$rule->{value}()"
+	    $if defined $nonterm_list
+		push @$nonterm_list, $rule->{value}
+	$elif $type eq "group"
+	    my $tlist=$rule->{value}
+	    $call @check_group_ambiguity, $tlist
+	    $foreach $t in @$tlist
+		do_rule($t, $indent, $nonterm_list)
+	$elif $type eq "*" or $type eq "?"
+	    my $first_set=get_first($rule->{value})
+	    $call get_look_ahead, $first_set
+	    my $switch="\$if"
+	    $if $rule->{type} eq "*"
+		$switch="\$while"
+	    $call do_print, "$switch $lookahead"
+	    do_rule($rule->{value}, $indent+1, $nonterm_list)
+	$else
+	    print "    "x$indent
+	    print "# "
+	    print_rule($rule)
+	    print "\n"
+
+    $sub do_rule_factor($k, $rulelist, $i_list, $indent, $nonterm_list)
+	my $rule=$rulelist->[$i_list->[0]]
+	my $factor=$rule->[$k]->{factor}
+
+	$while $k<@$rule and $rule->[$k]->{factor} eq $factor
+	    do_rule($rule->[$k], $indent, $nonterm_list)
+	    $k++
+
+	do_rule_pre_factor($k, $rulelist, $i_list, $indent, $nonterm_list)
+
+    $sub do_rule_pre_factor($k, $rulelist, $i_list, $indent, $nonterm_list)
+	my $num_total=@$i_list
+	my $num_remain=$num_total
+	# $call @check_token_ambiguity
+
+	my @alt_set
+	my $empty_alt
+	$foreach $i in @$i_list
+	    my $r=$rulelist->[$i]
+	    $if $k==0
+		$r->{index}=$i
+		push @alt_set, $r
+	    $else
+		# -- $r->{type} eq "group"
+		my $tlist=$r->{value}
+		my @t
+		$for $j=$k:@$tlist
+		    push @t, $tlist->[$j]
+		$if 0==@t
+		    $if defined $empty_alt
+			die "multiple empty cases\n"
+		    $empty_alt=$i
+		$elif 1==@t
+		    $t[0]->{index}=$i
+		    push @alt_set, $t[0]
+		$else
+		    push @alt_set, {type=>"group", value=>\@t, index=>$i}
+	$if $empty_alt
+	    push @alt_set, {type=>"empty", index=>$i}
+
+	$for $i=0:$num_total
+	    my $r=$alt_set[$i]
+	    my $set=get_first($r)
+	    $if $num_remain==1
+		$call do_print, "\$else"
+		$indent++
+		$if $r->{type} ne "empty"
+		    do_rule($r, $indent, \@name_list)
+		$call do_print, "# alt $r->{index}"
+		$indent--
+		$num_remain--
+	    $else
+		my $rlist
+		$elif $r->{type} eq "group"
+		    $rlist=$r->{value}
+		$else
+		    $rlist=[$r]
+
+		$if !defined $rlist->[0]->{factor}
+		    my $set=get_first($r)
+		    $call get_look_ahead, $set
+		    $call do_print, "\$case $lookahead"
+		    $indent++
+		    do_rule($r, $indent, \@name_list)
+		    $call do_print, "# alt $r->{index}"
+		    $indent--
+		    $num_remain--
+		$elif $rlist->[0]->{factor} ==1
+		    # skip
+		$else
+		    my @factors=split /-/, $rlist->[0]->{factor}
+		    $if $num_remain==@factors
+			$if $num_remain<$num_total
+			    $call do_print, "\$else"
+			    $indent++
+		    $else
+			$call get_look_ahead, $set
+			$call do_print, "\$case $lookahead"
+			$indent++
+
+		    do_rule_factor($k, $rulelist, \@factors, $indent, \@name_list)
+
+
+
+subcode: do_print(@str)
+    print "    "x$indent
+    print $(str), "\n"
+
+subcode: get_look_ahead(set)
+    my @t
+    $for $t in @$(set)
+	push @t, "LA(1)==$t"
+    my $lookahead=join(" || ", @t)
+
+# == AMBIGUITY CHEC ============================
+# Detect: (exp ',')* exp
+subcode: check_group_ambiguity(list)
+    my @temp_set
+    my $i=0
+    my $first_set=get_first($(list)->[0])
+    $while $i+1<@$(list)
+	my $second_set=get_first($(list)->[$i+1])
+	$if $empty_set_hash{$(list)->[$i]} 
+	    push @temp_set, @$first_set
+	    $foreach $t2 in @$second_set
+		$foreach $t1 in @temp_set
+		    $if $t2 eq $t1
+			print "Ambiguity: "
+			print_rule($(list)->[$i])
+			print_rule($(list)->[$i+1])
+			print " [$t2]\n"
+			die
+	$else
+	    @temp_set=()
+	$first_set=$second_set
+	$i++
+
+# Detect: ID | ID '(' explist ')'
+subcode: check_token_ambiguity
+    $for $j=$i+1:$num_total
+	my $t_set=$alt_set[$j]
+	$foreach $t1 in @$set
+	    $if grep {$_ eq $t1} @$t_set
+		print "Ambiguity: $name\n"
+		print "    "
+		print_rule($rulelist->[$i])
+		print "\n"
+		print "    "
+		print_rule($rulelist->[$j])
+		print "\n"
+		die
+
+# -- Left Factoring --------------------------------
+subcode: check_left_factors
+    $for $i=0:@$rulelist
+	$call get_rule_list, $rulelist->[$i], $list_i
+	$for $j=$i+1:@$rulelist
+	    $call get_rule_list, $rulelist->[$j], $list_j
+	    $for $k=0:@$list_i
+		my $a=$list_i->[$k]
+		my $b=$list_j->[$k]
+		$if ($a->{factor}==1) or ($a->{type} eq $b->{type} && $a->{value} eq $b->{value})
+		    $if !$a->{factor}
+			$a->{factor}="$i"
+		    $a->{factor}.="-$j"
+		    $b->{factor}=1
+		$else
+		    last
+
+subcode: get_rule_list(rule, rlist)
+    my $rule=$(rule)
+    my $(rlist)
+    $if $rule->{type} eq "group"
+	$(rlist)=$rule->{value}
+    $else
+	$(rlist)=[$rule]
+
+

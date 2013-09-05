@@ -1,0 +1,26 @@
+%grammar prog
+
+exp: Number 
+    | ID
+    | ID '(' explist ')'
+    | '(' exp ')'
+    | '-' exp
+    | %left '*' | '/'
+    | %left '+' | '-'
+    | %left '>' | '<' | '>=' | '<=' | '==' | '!='
+    | %right '=' | '*=' | '/=' | '+=' | '-='
+    | '!' exp
+
+stmt: 'if' exp 'then' stmtlist ('else' stmtlist)?
+    | 'while' exp 'do' stmtlist
+    | exp
+
+explist: exp (',' exp)*
+symlist: ID (',' ID)*
+
+stmtlist: stmt (';' stmt)*
+
+prog: stmtlist (EOL stmtlist)*
+
+Number: \d+
+ID: [a-zA-Z_]\w*

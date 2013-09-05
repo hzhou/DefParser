@@ -1,0 +1,72 @@
+include: regex.def
+include: macro_regex/parse_rule.def
+include: macro_regex/print_rule.def
+include: macro_regex/write_rule.def
+
+page: make_parser
+    type: pl
+    subcode: main
+	$global %rules
+	$call load_grammar
+	$call filter_grammar
+	$call print_grammar
+	$call parse_grammar
+	$call @support_subs
+
+# -------------------------------
+subcode: load_grammar
+    my $cur_rule
+    my $cur_rule_name
+    my $cur_rule_level
+
+    my $top_symbol
+
+    my @keyword
+    my @tokens
+    my %lex_rules
+
+    &call open_r, t.grammar
+	$if /^\%grammar\s+(\w+)/
+	    $top_symbol=$1
+	$elif /^(\w+):\s*(.*)/
+	    my ($name, $t)=($1, $2)
+	    $if $name=~/^[A-Z]/
+		push @tokens, $name
+		$lex_rules{$name}=$t
+	    $else
+		$cur_rule_name=$name
+		$cur_rule_level=0
+		$cur_rule=[]
+		$rules{$cur_rule_name}=$cur_rule
+		$if $t=~/^\%(left|right)\s*(.*)/
+		    die "Error: precedence cannot be at the top\n"
+		$call push_rule_direct
+	$elif /^\s+\|\s*(.*)/
+	    $if !$cur_rule
+		die "Misplaced rule definition\n"
+	    my $t=$1
+	    $call push_rule
+
+subcode: push_rule
+    $if $t=~/^\%(left|right)\s*(.*)/
+	my $temp_rule_name=$cur_rule_name."_$cur_rule_level"
+	$rules{$temp_rule_name}=$cur_rule
+
+	$cur_rule_level++
+	$cur_rule=[]
+	$rules{$cur_rule_name}=$cur_rule
+
+	$if $1 eq "left"
+	    $t="$temp_rule_name (($2) $temp_rule_name)*"
+	$elif $1 eq "right"
+	    $t="$temp_rule_name (($2) RECURSE)?"
+	$call push_rule_direct
+    $else
+	$call push_rule_direct
+
+subcode: push_rule_direct
+    $t=~s/\b$cur_rule_name\b/RECURSE/g
+    my $rule=parse_rule($t)
+    push @$cur_rule, $rule
+
+# ############################################

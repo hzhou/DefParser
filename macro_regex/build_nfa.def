@@ -1,0 +1,117 @@
+# ---------- NFA -----------------------------
+subcode:: _autoload
+    $sub build_nfa($src)
+	$if ref($src) ne "ARRAY"
+	    die "build_nfa error.\n"
+	my @states;
+	my @fragstack;
+	# each fragstack node:
+	#     in is the incoming arrow state
+	#     out is list of exit arrows (state->)
+	my $straight=1;
+	# my $match={idx=>0, c=>"Match-0"};
+	my $state_idx=1;
+	$foreach $c in @$src
+	    $if $c eq "]."
+		$call nfa_concat
+	    $elsif $c eq "]|"
+		$call nfa_or
+	    $elsif $c eq "]?"
+		$call nfa_question
+	    $elsif $c eq "]*"
+		$call nfa_star
+	    $elsif $c eq "]+"
+		$call nfa_plus
+	    $else
+		$call nfa_char
+	my $e=pop @fragstack;
+	$if @fragstack
+	    die "Unbalanced fragstack\n"
+	# $call nfa_frag_connect, $e, $match
+	return $e->{in}
+
+# ----------------------------------
+subcode: nfa_new_state(name)
+    my $state={idx=>$state_idx, c=>$(name)}
+    push @states, $state; 
+    $state_idx++;
+
+subcode: nfa_frag_connect(e, state)
+    $foreach $out in @{$(e)->{out}}
+	$out->{state}->{$out->{arrow}}= $(state)
+
+# ----------------------------------
+subcode: nfa_char
+    $call nfa_new_state, $c
+    my @out
+    push @out, {state=>$state, arrow=>"out1"}
+    push @fragstack, {in=>$state, out=>\@out};
+
+# --
+subcode: nfa_concat
+    my $e2=pop @fragstack;
+    my $e1=pop @fragstack;
+    $call nfa_frag_connect, $e1, $e2->{in}
+    push @fragstack, {in=>$e1->{in}, out=>$e2->{out}}
+
+subcode: nfa_or
+    my $e2=pop @fragstack;
+    my $e1=pop @fragstack;
+    #      /---[e1]-->
+    # -> [|] 
+    #      \---[e2]-->
+    $call nfa_new_state, "Split"
+    $state->{out1}=$e1->{in}
+    $state->{out2}=$e2->{in}
+    my @out
+    push @out, @{$e1->{out}}
+    push @out, @{$e2->{out}}
+    push @fragstack, {in=>$state, out=>\@out}
+
+subcode: nfa_question
+    my $e=pop @fragstack
+    #         ------->
+    #        /
+    # --> [?] -> [e] ->
+    #    
+    $call nfa_new_state, "Split"
+    $state->{out1}=$e->{in}
+    my @out
+    # one instance
+    push @out, @{$e->{out}}
+    # zero instance
+    push @out, {state=>$state, arrow=>"out2"}
+    push @fragstack, {in=>$state, out=>\@out}
+
+subcode: nfa_star_state
+    my $e=pop @fragstack;
+    #      --<----
+    #     /       /
+    #    [*] -> [e]
+    #     \__________-->
+    # 
+    $call nfa_new_state, "Split"
+    $state->{out1}=$e->{in}
+    $call nfa_frag_connect, $e, $state
+    my @out
+    push @out, {state=>$state, arrow=>"out2"}
+
+subcode: nfa_star
+    $call nfa_star_state
+    #      --<----
+    #     /       /
+    #-->- [*] -> [e]
+    #     \__________-->
+    #
+    push @fragstack, {in=>$state, out=>[{state=>$state, arrow=>"out2"}]};
+
+subcode: nfa_plus
+    $call nfa_star_state
+    #     --<----
+    #    /       /
+    #   [*] -> [e]
+    #     \_____/____-->
+    # -->----- / 
+    #
+    push @fragstack, {in=>$e->{in}, out=>[{state=>$state, arrow=>"out2"}]};
+

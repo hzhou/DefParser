@@ -1,0 +1,92 @@
+include: macro_regex/parse_regex.def
+include: macro_regex/build_nfa.def
+include: macro_regex/vm.def
+
+subcode:: _autoload
+    $call init_KeyName
+
+    $sub get_keyname($key)
+	$call generate_keyword_name($key)
+	return $name
+
+    $sub get_lexvm(@list)
+	my @tree
+	my $n=@list
+	$for $p in @list
+	    push @tree, @$p
+	$for $i=0:$n-1
+	    push @tree, "]|"
+	my $vm=build_vm(build_nfa(\@tree))
+
+subcode: generate
+    my @lex_list
+    $foreach $name in @namelist
+	my $re=parse_regex($namehash{$name}, $name)
+	push @lex_list, $re
+    $foreach $name in @tokens
+	my $re=parse_regex($lex_rules{$name})
+	push @lex_list, $re
+    my $lexvm=get_lexvm(@lex_list)
+
+subcode: init_KeyName
+    my %KeyName=(
+	'(' => "Lp",
+	')' => "Rp",
+	'>' => "Gt",
+	'<' => "Lt",
+	'=' => "Eq",
+	'*' => "Star",
+	'/' => "Slash",
+	'+' => "Plus",
+	'-' => "Minus",
+	'!' => "Not",
+	'^' => "Ctrl",
+	'@' => "At",
+	'#' => "Pound",
+	'$' => "Dollar",
+	'%' => "Percent",
+	'&' => "And",
+	'[' => "Lb",
+	']' => "Rb",
+	'{' => "Lc", 
+	'}' => "Rc",
+	':' => "Colon",
+	';' => "Semicolon",
+	'`' => "Lq",
+	"'" => "Rq",
+	'"' => "Dq",
+	',' => "Comma",
+	'.' => "Dot",
+	'?' => "Qm",
+	'|' => "Or",
+	'\\'=> "Bs",
+	)
+
+subcode: generate_keyword_name(k)
+    $global %namehash
+    $global @namelist
+
+    my @t
+    $for $i=0:length($(k))
+	my $c=substr($(k), $i, 1)
+	$if $KeyName{$c}
+	    push @t, $KeyName{$c}
+	$elif $c=~/[0-9]/
+	    push @t, $c
+	$elif $c=~/[a-zA-Z]/
+	    push @t, uc($c)
+	$else
+	    die "Missing KeyName for '$c'\n"
+    my $name=join('', @t)
+    $if $name=~/^\d/
+	$name="_$name"
+    $if $namehash{$name} and $namehash{$name} ne $(k)
+	my $tid=2
+	$while $namehash{"$name\_$tid"} and $namehash{"$name\_$tid"} ne $(k)
+	    $tid++
+	$name="$name\_$tid"
+    $namehash{$name}=$(k)
+    push @namelist, $name
+
+
+
