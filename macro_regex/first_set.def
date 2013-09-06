@@ -45,13 +45,13 @@ subcode: get_first_push(set)
 # -
 subcode: get_first_group(list)
     &call get_first_block
+	$empty_set_hash{$rule}=1
 	$for $i=0:@$(list)
 	    my $set=get_first($(list)->[$i])
 	    $call get_first_push, $set
 	    $if ! $empty_set_hash{$(list)->[$i]}
+		$empty_set_hash{$rule}=0
 		last
-	$if $i==@$(list)
-	    $empty_set_hash{$rule}=1
 
 # -
 subcode: get_first_alt(list)

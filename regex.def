@@ -9,24 +9,58 @@ subcode:: _autoload
 	$call generate_keyword_name($key)
 	return $name
 
-    $sub get_lexvm(@list)
-	my @tree
-	my $n=@list
-	$for $p in @list
-	    push @tree, @$p
-	$for $i=0:$n-1
-	    push @tree, "]|"
-	my $vm=build_vm(build_nfa(\@tree))
+subcode: generate_lex
+    my @tree
+    my $count=0
+    $foreach $name in @lex_keywords
+	my $str=$lex_rules{$name}
+	my $re=parse_regex_keyword($str, $name)
+	push @tree, @$re
+	$count++
+    $foreach $name in @lex_tokens
+	my $pattern=$lex_rules{$name}
+	my $re=parse_regex($pattern, $name)
+	push @tree, @$re
+	$count++
 
-subcode: generate
-    my @lex_list
-    $foreach $name in @namelist
-	my $re=parse_regex($namehash{$name}, $name)
-	push @lex_list, $re
-    $foreach $name in @tokens
-	my $re=parse_regex($lex_rules{$name})
-	push @lex_list, $re
-    my $lexvm=get_lexvm(@lex_list)
+    $for $i=1:$count
+	push @tree, "]|"
+    my $vm=build_vm(build_nfa(\@tree))
+    # $call print_vm_c, lex
+
+subcode: add_regex(name, pattern)
+    $global %lex_rules
+    $global @lex_tokens
+    push @lex_tokens, $(name)
+    $lex_rules{$(name)}=$(pattern)
+
+subcode: generate_keyword_name(k)
+    $global @lex_keywords
+
+    my @t
+    $for $i=0:length($(k))
+	my $c=substr($(k), $i, 1)
+	$if $KeyName{$c}
+	    push @t, $KeyName{$c}
+	$elif $c=~/[0-9]/
+	    push @t, $c
+	$elif $c=~/[a-zA-Z]/
+	    push @t, uc($c)
+	$else
+	    die "Missing KeyName for '$c'\n"
+    my $name=join('', @t)
+    $if $name=~/^\d/
+	$name="_$name"
+    $if $lex_rules{$name} and $lex_rules{$name} ne $(k)
+	my $tid=2
+	$while $lex_rules{"$name\_$tid"} and $lex_rules{"$name\_$tid"} ne $(k)
+	    $tid++
+	$name="$name\_$tid"
+
+    push @lex_keywords, $name
+    $lex_rules{$name}=$(k)
+
+
 
 subcode: init_KeyName
     my %KeyName=(
@@ -61,32 +95,4 @@ subcode: init_KeyName
 	'|' => "Or",
 	'\\'=> "Bs",
 	)
-
-subcode: generate_keyword_name(k)
-    $global %namehash
-    $global @namelist
-
-    my @t
-    $for $i=0:length($(k))
-	my $c=substr($(k), $i, 1)
-	$if $KeyName{$c}
-	    push @t, $KeyName{$c}
-	$elif $c=~/[0-9]/
-	    push @t, $c
-	$elif $c=~/[a-zA-Z]/
-	    push @t, uc($c)
-	$else
-	    die "Missing KeyName for '$c'\n"
-    my $name=join('', @t)
-    $if $name=~/^\d/
-	$name="_$name"
-    $if $namehash{$name} and $namehash{$name} ne $(k)
-	my $tid=2
-	$while $namehash{"$name\_$tid"} and $namehash{"$name\_$tid"} ne $(k)
-	    $tid++
-	$name="$name\_$tid"
-    $namehash{$name}=$(k)
-    push @namelist, $name
-
-
 

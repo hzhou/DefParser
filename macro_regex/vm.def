@@ -53,18 +53,18 @@ subcode: state_to_vm
 	$state=$state->{out1};
 
 # --------
-subcode: dump_vm_c(var, out)
+subcode: print_vm_c(var)
     $call vm_hash_labels, $vm
     my $n=@$vm;
-    push @$(out), "struct VMInst $(var)[$n]= {"
+    $call do_print, "struct VMInst $(var)[$n]= {"
     my $addr=0
     $foreach $l in @$vm
 	my $t=join(", ", @$l)
 	$if $labelhash{$addr}
-	    push @$(out), "    /* $addr */"
-	push @$(out), "    $t,"
+	    $call do_print, "    /* $addr */"
+	$call do_print, "    $t,"
 	$addr++
-    push @$(out), "};"
+    $call do_print, "};"
 
 subcode: vm_hash_labels(vm)
     my %labelhash

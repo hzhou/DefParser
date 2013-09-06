@@ -7,11 +7,25 @@ page: make_parser
     type: pl
     subcode: main
 	$global %rules
+
 	$call load_grammar
+	$call generate_lex
 	$call filter_grammar
 	$call print_grammar
-	$call parse_grammar
+	&call open_w, out/lex.def
+	    my $indent=0
+	    $call print_vm_c, lex
+	&call open_w, out/parser.def
+	    my $indent=0
+	    $call parse_grammar
 	$call @support_subs
+
+# -------------------------------
+subcode: do_print(@str)
+    print Out "    "x$indent, $(str), "\n"
+
+subcode: do_print_ln
+    print Out "\n"
 
 # -------------------------------
 subcode: load_grammar
@@ -21,18 +35,13 @@ subcode: load_grammar
 
     my $top_symbol
 
-    my @keyword
-    my @tokens
-    my %lex_rules
-
     &call open_r, t.grammar
 	$if /^\%grammar\s+(\w+)/
 	    $top_symbol=$1
 	$elif /^(\w+):\s*(.*)/
 	    my ($name, $t)=($1, $2)
 	    $if $name=~/^[A-Z]/
-		push @tokens, $name
-		$lex_rules{$name}=$t
+		$call add_regex, $name, $t
 	    $else
 		$cur_rule_name=$name
 		$cur_rule_level=0

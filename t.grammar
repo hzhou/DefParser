@@ -13,7 +13,13 @@ exp: Number
 
 stmt: 'if' exp 'then' stmtlist ('else' stmtlist)?
     | 'while' exp 'do' stmtlist
+    | type ID '(' args ')' ';'
+    | type ID '(' args ')' '{' stmtlist '}'
     | exp
+
+type: 'void' | 'int'
+args: arg (',' arg)*
+arg: 'int' ID
 
 explist: exp (',' exp)*
 symlist: ID (',' ID)*

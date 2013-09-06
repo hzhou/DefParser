@@ -1,10 +1,13 @@
 include: macro_regex/first_set.def
 
 subcode: parse_grammar
+    my @fnlist
     &call topdown_loop, name, $top_symbol
 	my $rulelist=$rules{$name}
-	print "fncode: parse_$name\n"
-	my $indent=1
+	$indent=0
+	push @fnlist, "parse_$name"
+	$call do_print, "fncode: parse_$name"
+	$indent++
 	$if @$rulelist==1
 	    do_rule($rulelist->[0], $indent, \@name_list)
 	$else
@@ -14,10 +17,17 @@ subcode: parse_grammar
 	    $for $i=0:@$rulelist
 		push @i_list, $i
 	    do_rule_pre_factor(0, $rulelist, \@i_list, $indent, \@name_list)
-	print "\n"
+	$call do_print_ln
 
+    my $indent=0
+    $call do_print, "subcode:: _autoload"
+    $indent++
+    $call do_print, "\$list ", join(', ', @fnlist)
+
+# --------------------------------
 subcode:: _autoload
     $sub do_rule($rule, $indent, $nonterm_list)
+	my $error
 	my $type=$rule->{type}
 	$if $type=~/^(keyword|term)$/
 	    $call do_print, "match($rule->{value})"
@@ -38,99 +48,110 @@ subcode:: _autoload
 		$switch="\$while"
 	    $call do_print, "$switch $lookahead"
 	    do_rule($rule->{value}, $indent+1, $nonterm_list)
+	$elif $type eq "empty"
+	    # skip
+	$elif $type eq "alt"
+	    my $rlist=$rule->{value}
+	    my $flag=1
+	    $foreach $r in @$rlist
+		$if $r->{type} !~/^(keyword|term)$/
+		    $flag=0
+	    $if $flag
+		$call do_print, "grab_token()"
+	    $else
+		$error=1
 	$else
+	    $error=1
+
+	$if $error
 	    print "    "x$indent
 	    print "# "
 	    print_rule($rule)
 	    print "\n"
 
     $sub do_rule_factor($k, $rulelist, $i_list, $indent, $nonterm_list)
-	my $rule=$rulelist->[$i_list->[0]]
-	my $factor=$rule->[$k]->{factor}
-
-	$while $k<@$rule and $rule->[$k]->{factor} eq $factor
-	    do_rule($rule->[$k], $indent, $nonterm_list)
+	$call get_rule_list, $rulelist->[$i_list->[0]], $rlist
+	my $factor=$rlist->[$k]->{factor}
+	$while $k<@$rlist and $rlist->[$k]->{factor} eq $factor
+	    do_rule($rlist->[$k], $indent, $nonterm_list)
 	    $k++
 
 	do_rule_pre_factor($k, $rulelist, $i_list, $indent, $nonterm_list)
 
-    $sub do_rule_pre_factor($k, $rulelist, $i_list, $indent, $nonterm_list)
+# --------------------------------
+subcode:: _autoload
+    $sub do_rule_pre_factor($k, $rulelist, $i_list, $start_indent, $nonterm_list)
 	my $num_total=@$i_list
 	my $num_remain=$num_total
 	# $call @check_token_ambiguity
-
-	my @alt_set
-	my $empty_alt
-	$foreach $i in @$i_list
-	    my $r=$rulelist->[$i]
-	    $if $k==0
-		$r->{index}=$i
-		push @alt_set, $r
-	    $else
-		# -- $r->{type} eq "group"
-		my $tlist=$r->{value}
-		my @t
-		$for $j=$k:@$tlist
-		    push @t, $tlist->[$j]
-		$if 0==@t
-		    $if defined $empty_alt
-			die "multiple empty cases\n"
-		    $empty_alt=$i
-		$elif 1==@t
-		    $t[0]->{index}=$i
-		    push @alt_set, $t[0]
-		$else
-		    push @alt_set, {type=>"group", value=>\@t, index=>$i}
-	$if $empty_alt
-	    push @alt_set, {type=>"empty", index=>$i}
-
+	$call get_alt_set
 	$for $i=0:$num_total
+	    my $indent=$start_indent
 	    my $r=$alt_set[$i]
-	    my $set=get_first($r)
+	    #print "alt #$i: $r->{type} $num_remain/$num_total\n"
 	    $if $num_remain==1
-		$call do_print, "\$else"
-		$indent++
-		$if $r->{type} ne "empty"
-		    do_rule($r, $indent, \@name_list)
-		$call do_print, "# alt $r->{index}"
-		$indent--
-		$num_remain--
+		$call do_print_else
+		$call do_rule_r
 	    $else
-		my $rlist
-		$elif $r->{type} eq "group"
-		    $rlist=$r->{value}
-		$else
-		    $rlist=[$r]
-
+		$call get_rule_list, $r, $rlist
 		$if !defined $rlist->[0]->{factor}
-		    my $set=get_first($r)
-		    $call get_look_ahead, $set
-		    $call do_print, "\$case $lookahead"
-		    $indent++
-		    do_rule($r, $indent, \@name_list)
-		    $call do_print, "# alt $r->{index}"
-		    $indent--
-		    $num_remain--
-		$elif $rlist->[0]->{factor} ==1
+		    $call do_print_LA1
+		    $call do_rule_r
+		$elif $rlist->[0]->{factor} eq "1"
 		    # skip
 		$else
 		    my @factors=split /-/, $rlist->[0]->{factor}
 		    $if $num_remain==@factors
 			$if $num_remain<$num_total
-			    $call do_print, "\$else"
-			    $indent++
+			    $call do_print_else
 		    $else
-			$call get_look_ahead, $set
-			$call do_print, "\$case $lookahead"
-			$indent++
+			$call do_print_LA1
+		    do_rule_factor($k, $rulelist, \@factors, $indent, $nonterm_list)
 
-		    do_rule_factor($k, $rulelist, \@factors, $indent, \@name_list)
+subcode: do_print_else
+    $call do_print, "\$else"
+    $indent++
 
+subcode: do_print_LA1
+    my $set=get_first($r)
+    $call get_look_ahead, $set
+    $call do_print, "\$case $lookahead"
+    $indent++
 
+subcode: do_rule_r
+    do_rule($r, $indent, $nonterm_list)
+    $call do_print, "# alt $r->{index}"
+    $num_remain--
 
-subcode: do_print(@str)
-    print "    "x$indent
-    print $(str), "\n"
+# -----
+subcode: get_alt_set
+    my @alt_set
+    my $empty_alt
+    $foreach $i in @$i_list
+	my $r=$rulelist->[$i]
+	$if $k==0
+	    $r->{index}=$i
+	    push @alt_set, $r
+	$elif $r->{type} ne "group" && $k==1
+	    $call set_empty_alt
+	$else
+	    my $tlist=$r->{value}
+	    $if $k>=@$tlist
+		$call set_empty_alt
+	    $else
+		my @t
+		$for $j=$k:@$tlist
+		    push @t, $tlist->[$j]
+		push @alt_set, {type=>"group", value=>\@t, index=>$i}
+    $if $empty_alt
+	push @alt_set, {type=>"empty", index=>$empty_alt}
+
+subcode: set_empty_alt
+    $if defined $empty_alt
+	die "multiple empty cases\n"
+    $empty_alt=$i
+
+# ------------------------------------------------
 
 subcode: get_look_ahead(set)
     my @t
@@ -185,14 +206,27 @@ subcode: check_left_factors
 	    $for $k=0:@$list_i
 		my $a=$list_i->[$k]
 		my $b=$list_j->[$k]
-		$if ($a->{factor}==1) or ($a->{type} eq $b->{type} && $a->{value} eq $b->{value})
+		$if $a->{factor}==1 
+		    next
+		$elif $a->{type} eq $b->{type} && $a->{value} eq $b->{value}
 		    $if !$a->{factor}
 			$a->{factor}="$i"
 		    $a->{factor}.="-$j"
 		    $b->{factor}=1
 		$else
 		    last
+    # $call print_left_factors
 
+subcode: print_left_factors
+    $for $i=0:@$rulelist
+	$call get_rule_list, $rulelist->[$i], $list_i
+	$for $k=0:@$list_i
+	    my $a=$list_i->[$k]
+	    print "[$a->{factor}] "
+	print "\n"
+
+
+# ===============================
 subcode: get_rule_list(rule, rlist)
     my $rule=$(rule)
     my $(rlist)
