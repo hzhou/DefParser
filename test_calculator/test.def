@@ -1,0 +1,31 @@
+include: parser_inc.def
+include: lex.def
+include: parser.def
+include: actions.def
+
+page: test, basic_frame
+    subcode: main
+	prog_input=input_create(stdin, 1024)
+	prog_vm=regex_vm_init(lex, 162)
+	$call test_parser
+	#$call test_lex
+	regex_vm_finish(prog_vm)
+
+subcode: test_input
+    $while 1
+	tn_c=input_get_char(prog_input)
+	putchar(c)
+	$if tn_c==EOF
+	    break
+
+subcode: test_lex
+    $while 1
+	n_token=regex_vm_match(prog_vm, prog_input)
+	$if n_token==EOF
+	    break
+	s_token=input_get_str(prog_input)
+	print got token: $n_token [$s_token]
+
+subcode: test_parser
+    parse_prog()
+    $call print_stack

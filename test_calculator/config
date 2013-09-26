@@ -1,0 +1,3 @@
+output_dir: out
+include_path: DefParser:macros_parser
+module: c

@@ -1,0 +1,78 @@
+subcode: on_Number
+    $call push_token_number, atof(input_get_str(prog_input))
+    n_token_count++
+
+subcode: on_exp_2
+    $call pop_string, ts_val
+    $if strcmp(ts_val, "Pi")==0
+	$call push_token_number, 3.14159265
+    $else
+	print "Error: ID %s not defined", ts_val
+	exit(1)
+    free(ts_val)
+
+subcode: on_exp_function
+    $local pf_params[10]
+    $call da_pop, p_token_stack
+    $if $(item).id==explist
+	tn_count=*(int*)$(item).val
+	$if tn_count>10
+	    print "Error: function with too many parameters"
+	    exit(1)
+	$for i=0:tn_count
+	    $call pop_number, pf_params[i]
+    $else
+	tn_count=1
+	pf_params[0]=*(double*)$(item).val
+
+    $call pop_string, ts_val
+    $if ts_val eq "sin"
+	$include math
+	$call check_exp_function_param_count, 1
+	tf_ans=sin(pf_params[0]*3.1415926/180.0)
+	$call push_token_number, tf_ans
+    $else
+	print "Error: function %s not defined", ts_val
+	exit(1)
+
+subcode: check_exp_function_param_count(n)
+    $if tn_count!=$(n)
+	print "Error: function %s takes $(n) parameters, %d supplied", ts_val, tn_count
+	exit(1)
+
+subcode: on_exp_plus
+    tf_ans=0.0
+    $for $i=0:n_token_count/2
+	$call pop_number, tf_val
+	$call pop_keyword, tn_op
+	$if tn_op==Plus
+	    tf_ans+=tf_val
+	$else
+	    tf_ans-=tf_val
+    $call pop_number, tf_val
+    tf_ans+=tf_val
+
+    $call push_token_number, tf_ans
+
+subcode: on_exp_mult
+    tf_ans=1.0
+    $for $i=0:n_token_count/2
+	$call pop_number, tf_val
+	$call pop_keyword, tn_op
+	$if tn_op==Star
+	    tf_ans*=tf_val
+	$else
+	    tf_ans/=tf_val
+    $call pop_number, tf_val
+    tf_ans*=tf_val
+
+    $call push_token_number, tf_ans
+
+subcode: on_stmt
+    $if n_token_count>0
+	$call pop_number, tf_ans
+	print Ans = $tf_ans
+
+# ------------------
+subcode: on_EOL
+subcode: on_prog

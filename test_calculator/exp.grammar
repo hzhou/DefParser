@@ -1,0 +1,21 @@
+%grammar prog
+
+exp: Number 
+    | ID
+    | exp_function: ID '(' explist ')'
+    | '(' exp ')'
+    | '-' exp
+    | exp_mult: %left '*' | '/'
+    | exp_plus: %left '+' | '-'
+
+explist: exp (',' exp)*
+
+stmt: exp?
+prog: stmt (EOL stmt)*
+
+Number: \d+
+ID: [a-zA-Z_]\w*
+
+EOL: \n
+
+SKIP: [ \t]
