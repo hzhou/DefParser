@@ -1,0 +1,104 @@
+
+# -------------------------------
+subcode: load_grammar(file)
+    my $cur_rule
+    my $cur_rule_name
+    my $cur_rule_index
+    my $cur_rule_level
+
+    my $top_symbol
+    &call open_r, $(file)
+	$if /^\%grammar\s+(\w+)/
+	    $top_symbol=$1
+	$elif /^\%debug\s+(\w+)/
+	    $global $debug
+	    $debug=$1
+	$elif /^(\w+):\s*(.*)/
+	    my ($name, $t)=($1, $2)
+	    $if $name=~/^[A-Z]/
+		$call add_regex, $name, $t
+	    $else
+		$cur_rule_name=$name
+		$cur_rule_index=0
+		$cur_rule_level=0
+		$cur_rule=[]
+		$rules{$cur_rule_name}=$cur_rule
+		$if $t=~/^\%(left|right)\s*(.*)/
+		    die "Error: precedence cannot be at the top\n"
+		$call push_rule
+	$elif /^\s+\|\s*(.*)/
+	    $if !$cur_rule
+		die "Misplaced rule definition\n"
+	    my $t=$1
+	    $call push_rule
+
+subcode: push_rule
+    $call push_rule_getname
+    $if $t=~/^\%(left|right)\s*(.*)/
+	my $temp_rule_name=$cur_rule_name."_$cur_rule_level"
+	$rules{$temp_rule_name}=$cur_rule
+
+	$cur_rule_level++
+	$cur_rule=[]
+	$rules{$cur_rule_name}=$cur_rule
+
+	$if $1 eq "left"
+	    $t="$temp_rule_name (($2) $temp_rule_name)*"
+	$elif $1 eq "right"
+	    $t="$temp_rule_name (($2) RECURSE)?"
+	$call push_rule_direct
+    $else
+	$call push_rule_direct
+
+subcode: push_rule_direct
+    # $t=~s/\b$cur_rule_name\b/RECURSE/g
+    my $rule=parse_rule($t, $name)
+    push @$cur_rule, $rule
+
+subcode: push_rule_getname
+    $global @rule_name_list=("group")
+    $global %rule_name_mult
+    my $name=$cur_rule_name
+    $cur_rule_index++
+
+    $if $t=~/^(\w+):\s*(.*)/
+	$name=$1
+	$t=$2
+    $elif $cur_rule_index>1
+	$name=$cur_rule_name."_".$cur_rule_index
+	$rule_name_mult{$cur_rule_name}=1
+    push @rule_name_list, $name
+# ############################################
+subcode: each_rule_name
+    $foreach $name in @rule_name_list
+	$if $rule_name_mult{$name}
+	    $name.="_1"
+	BLOCK
+
+subcode: get_rule_name(rule)
+    my $name=$(rule)->{name}
+    $if $rule_name_mult{$name}
+	$name.="_1"
+
+subcode: get_rule_name_concat(rule)
+    $call get_rule_name, $(rule)
+    $name.="_concat"
+    push @rule_name_list, $name
+
+subcode: print_rule_defs
+    my $idx=0
+    &call each_rule_name
+	my $t=10000+$idx
+	$call do_print, "\$define($name) $t"
+	$idx++
+    $call do_print_ln
+
+subcode: print_rule_name_sub
+    $call do_print, "subcode: print_rule_name(var)"
+    $indent++
+    &call each_rule_name
+	$call do_print, "\$case \$(var)==$name"
+	$indent++
+	$call do_print, "printf(\"$name\")"
+	$indent--
+    $indent--

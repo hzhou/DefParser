@@ -1,23 +1,38 @@
-include: regex.def
+include: macro_regex/build_lex.def
 include: macro_regex/parse_rule.def
 include: macro_regex/print_rule.def
 include: macro_regex/write_rule.def
+include: macro_regex/load_grammar.def
 
 page: make_parser
     type: pl
     subcode: main
 	$global %rules
 
-	$call load_grammar
+	my ($grammarfile, $outdir)=@ARGV
+	$if !-f $grammarfile or !-d $outdir
+	    die "Usage: $0 grammar_file output_dir\n"
+
+	$call load_grammar, $grammarfile
 	$call generate_lex
 	$call filter_grammar
 	$call print_grammar
-	&call open_w, out/lex.def
+	&call open_w, $outdir/lex.def
 	    my $indent=0
+	    $call do_print, "subcode:: _autoload"
+	    $indent++
+	    $call print_lex_defs
 	    $call print_vm_c, lex
-	&call open_w, out/parser.def
+	&call open_w, $outdir/parser.def
 	    my $indent=0
+	    $call do_print_ln
 	    $call parse_grammar
+
+	    $call do_print, "subcode:: _autoload"
+	    $indent++
+	    $call print_rule_defs
+	    $indent--
+	    $call print_rule_name_sub
 	$call @support_subs
 
 # -------------------------------
@@ -27,55 +42,3 @@ subcode: do_print(@str)
 subcode: do_print_ln
     print Out "\n"
 
-# -------------------------------
-subcode: load_grammar
-    my $cur_rule
-    my $cur_rule_name
-    my $cur_rule_level
-
-    my $top_symbol
-
-    &call open_r, t.grammar
-	$if /^\%grammar\s+(\w+)/
-	    $top_symbol=$1
-	$elif /^(\w+):\s*(.*)/
-	    my ($name, $t)=($1, $2)
-	    $if $name=~/^[A-Z]/
-		$call add_regex, $name, $t
-	    $else
-		$cur_rule_name=$name
-		$cur_rule_level=0
-		$cur_rule=[]
-		$rules{$cur_rule_name}=$cur_rule
-		$if $t=~/^\%(left|right)\s*(.*)/
-		    die "Error: precedence cannot be at the top\n"
-		$call push_rule_direct
-	$elif /^\s+\|\s*(.*)/
-	    $if !$cur_rule
-		die "Misplaced rule definition\n"
-	    my $t=$1
-	    $call push_rule
-
-subcode: push_rule
-    $if $t=~/^\%(left|right)\s*(.*)/
-	my $temp_rule_name=$cur_rule_name."_$cur_rule_level"
-	$rules{$temp_rule_name}=$cur_rule
-
-	$cur_rule_level++
-	$cur_rule=[]
-	$rules{$cur_rule_name}=$cur_rule
-
-	$if $1 eq "left"
-	    $t="$temp_rule_name (($2) $temp_rule_name)*"
-	$elif $1 eq "right"
-	    $t="$temp_rule_name (($2) RECURSE)?"
-	$call push_rule_direct
-    $else
-	$call push_rule_direct
-
-subcode: push_rule_direct
-    $t=~s/\b$cur_rule_name\b/RECURSE/g
-    my $rule=parse_rule($t)
-    push @$cur_rule, $rule
-
-# ############################################

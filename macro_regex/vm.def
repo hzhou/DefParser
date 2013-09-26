@@ -31,7 +31,7 @@ subcode:: _autoload
 	return \@vm;
 
 subcode: state_to_vm
-    $if $state->{c} eq "Match-(.*)"
+    $if $state->{c} =~/Match-(.*)/
 	push @vm,  ["Match", $1, 0, 0];
 	last;
     $elsif $state->{c} eq "Split"
@@ -42,7 +42,7 @@ subcode: state_to_vm
     $elsif $state->{c} eq "AnyChar"
 	push @vm,  ["AnyChar", 0, 0, 0];
 	$state=$state->{out1};
-    $elsif $state->{c} =~/-(.)(.)/
+    $elsif $state->{c} =~/^-(.)(.)/
 	push @vm,  ["Range", 0, "'$1'", "'$2'"];
 	$state=$state->{out1};
     $elsif $state->{c} =~/class-(.)/

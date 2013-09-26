@@ -5,6 +5,8 @@ subcode: _autoload
 	    push @$nonterm_list, $rule->{value}
 	$elif $type eq "RECURSE"
 	    die "error RECURSE\n"
+	$elif $type eq "right"
+	    $rule->{recurse}=$name
 	$elif $type =~ /group|alt/
 	    my $tlist=$rule->{value}
 	    $foreach $t in @$tlist

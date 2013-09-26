@@ -60,7 +60,15 @@ subcode: generate_keyword_name(k)
     push @lex_keywords, $name
     $lex_rules{$name}=$(k)
 
-
+subcode: print_lex_defs
+    my $idx=1
+    $foreach $name in @lex_keywords
+	$call do_print, "\$define($name) $idx"
+	$idx++
+    $call do_print, "\$define(KEYWORD_MAX) $idx"
+    $foreach $name in @lex_tokens
+	$call do_print, "\$define($name) $idx"
+	$idx++
 
 subcode: init_KeyName
     my %KeyName=(
@@ -93,6 +101,6 @@ subcode: init_KeyName
 	'.' => "Dot",
 	'?' => "Qm",
 	'|' => "Or",
-	'\\'=> "Bs",
+	'\\'=> "Backslash",
 	)
 

@@ -3,34 +3,46 @@ include: macro_regex/first_set.def
 subcode: parse_grammar
     my @fnlist
     &call topdown_loop, name, $top_symbol
+	my $nonterm_list=\@name_list
 	my $rulelist=$rules{$name}
 	$indent=0
 	push @fnlist, "parse_$name"
 	$call do_print, "fncode: parse_$name"
 	$indent++
+	$if $debug
+	    $call do_print, "print \"parse_$name\""
+	$call do_print, "\$call push_token_count"
+	my $k=0
 	$if @$rulelist==1
-	    do_rule($rulelist->[0], $indent, \@name_list)
+	    $call do_rule_finish, $rulelist->[0]
 	$else
 	    $call check_left_factors
 
 	    my @i_list
 	    $for $i=0:@$rulelist
 		push @i_list, $i
-	    do_rule_pre_factor(0, $rulelist, \@i_list, $indent, \@name_list)
+	    do_rule_pre_factor($k, $rulelist, \@i_list, $indent, $nonterm_list)
+	$call do_print, "\$call pop_token_count"
+	$if $debug
+	    $call do_print, "print \"    exit parse_$name\""
 	$call do_print_ln
 
     my $indent=0
     $call do_print, "subcode:: _autoload"
     $indent++
     $call do_print, "\$list ", join(', ', @fnlist)
+    $indent--
+    $call do_print_ln
 
 # --------------------------------
 subcode:: _autoload
     $sub do_rule($rule, $indent, $nonterm_list)
 	my $error
 	my $type=$rule->{type}
-	$if $type=~/^(keyword|term)$/
-	    $call do_print, "match($rule->{value})"
+	$if $type eq "keyword"
+	    $call do_print, "\$call match_keyword, $rule->{value}"
+	$elif $type eq "term"
+	    $call do_print, "\$call match_term, $rule->{value}"
 	$elif $type eq "nonterm"
 	    $call do_print, "parse_$rule->{value}()"
 	    $if defined $nonterm_list
@@ -47,7 +59,11 @@ subcode:: _autoload
 	    $if $rule->{type} eq "*"
 		$switch="\$while"
 	    $call do_print, "$switch $lookahead"
-	    do_rule($rule->{value}, $indent+1, $nonterm_list)
+	    $indent++
+	    do_rule($rule->{value}, $indent, $nonterm_list)
+	    $if !$rule->{name}
+		warn "Concat rule missing name\n"
+	    $indent--
 	$elif $type eq "empty"
 	    # skip
 	$elif $type eq "alt"
@@ -57,7 +73,8 @@ subcode:: _autoload
 		$if $r->{type} !~/^(keyword|term)$/
 		    $flag=0
 	    $if $flag
-		$call do_print, "grab_token()"
+		$call do_print, "\$call grab_token"
+		$call do_print, "\$call consume_token"
 	    $else
 		$error=1
 	$else
@@ -65,7 +82,7 @@ subcode:: _autoload
 
 	$if $error
 	    print "    "x$indent
-	    print "# "
+	    print "ERROR do_rule: "
 	    print_rule($rule)
 	    print "\n"
 
@@ -119,16 +136,22 @@ subcode: do_print_LA1
     $indent++
 
 subcode: do_rule_r
-    do_rule($r, $indent, $nonterm_list)
-    $call do_print, "# alt $r->{index}"
+    $call do_rule_finish, $r
     $num_remain--
+
+subcode: do_rule_finish(rule)
+    do_rule($(rule), $indent, $nonterm_list)
+    $call get_rule_name, $(rule)
+    $call do_print, "\$call on_parse_finish, $name"
 
 # -----
 subcode: get_alt_set
     my @alt_set
     my $empty_alt
+    my $empty_alt_name
     $foreach $i in @$i_list
 	my $r=$rulelist->[$i]
+	$call get_rule_name, $r
 	$if $k==0
 	    $r->{index}=$i
 	    push @alt_set, $r
@@ -142,21 +165,22 @@ subcode: get_alt_set
 		my @t
 		$for $j=$k:@$tlist
 		    push @t, $tlist->[$j]
-		push @alt_set, {type=>"group", value=>\@t, index=>$i}
+		push @alt_set, {type=>"group", value=>\@t, index=>$i, name=>$name}
     $if $empty_alt
-	push @alt_set, {type=>"empty", index=>$empty_alt}
+	push @alt_set, {type=>"empty", index=>$empty_alt, name=>$empty_alt_name}
 
 subcode: set_empty_alt
     $if defined $empty_alt
 	die "multiple empty cases\n"
     $empty_alt=$i
+    $empty_alt_name=$name
 
 # ------------------------------------------------
 
 subcode: get_look_ahead(set)
     my @t
     $for $t in @$(set)
-	push @t, "LA(1)==$t"
+	push @t, "LA()==$t"
     my $lookahead=join(" || ", @t)
 
 # == AMBIGUITY CHEC ============================

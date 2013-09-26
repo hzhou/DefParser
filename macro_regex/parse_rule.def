@@ -1,7 +1,7 @@
 subcode: _autoload
     # input: $str -- BNF rule string
     # output: a hash -- root of a tree structure
-    $sub parse_rule($str)
+    $sub parse_rule($str, $rulename)
 	my @char_stack
 	my $n_char=0
 	my $in_quote=0
@@ -46,6 +46,7 @@ subcode: _autoload
 	$call concat_atom
 	$call concat_alt
 	$call @check_parse_end
+	$char_stack[0]->{name}=$rulename
 	return $char_stack[0]
 
 subcode: concat_char
@@ -105,10 +106,10 @@ subcode: parse_special
 	$n_alt++
     $elif $c eq '*' or $c eq '?'
 	my $p=pop @char_stack
-	push @char_stack, {type=>$c, value=>$p}
+	push @char_stack, {type=>$c, value=>$p, name=>$rulename}
     $elif $c eq '+'
 	my $p=$char_stack[-1]
-	push @char_stack, {type=>"*", value=>$p}
+	push @char_stack, {type=>"*", value=>$p, name=>$rulename}
 
 # -------------------------------------------
 subcode: check_parse_end
