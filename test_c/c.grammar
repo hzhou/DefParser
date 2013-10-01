@@ -1,0 +1,141 @@
+%grammar prog
+
+prog: unit*
+unit: function
+    | decl 
+
+function: spec_list? 
+
+# ----
+exp_atom: ID | Integer | Float | Character
+    | Strings
+    | '(' exp ')'
+
+# ----
+exp_postfix: exp_atom ( array_reference | function_call | struct_reference | inc_dec )*
+
+array_reference: '[' exp ']'
+
+function_call: '(' arg_list ')'
+arg: exp_single?
+arg_list: arg ( ',' arg )*
+
+struct_reference: ('.' | '->') ID
+inc_dec: '++' | '--'
+
+# ----
+exp_unary: ( '++' | '--' | '&' | '*' | '+' | '-' | '~' | '!' | TypeCast | 'sizeof' )* exp_postfix
+
+# ----
+exp_single: exp_unary
+    | exp_mult: %left '*' | '/' | '%'
+    | exp_plus: %left '+' | '-'
+    | exp_shift: %left '<<' | '>>'
+    | exp_rel: %left '<' | '>' | '<=' | '>='
+    | exp_cmp: %left '==' | '!='
+    | exp_bitand: %left '&'
+    | exp_bitxor: %left '^'
+    | exp_bitor: %left '|'
+    | exp_and: %left '&&'
+    | exp_or: %left '||'
+    | exp_cond: %tripple '?', ':'
+    | exp_assign: %right '=' | '*=' | '/=' | '%=' | '+=' | '-=' | '<<=' | '>>=' | '&=' | '^=' | '|='
+exp: exp_single (',' exp_single)*
+
+# -------------------------------------------
+spec_storage: 'auto' | 'register' | 'static' | 'extern'
+spec_type: 'void' | 'char' | 'short' | 'int' | 'long' | 'float' | 'double' | 'signed' | 'unsigned' 
+spec_qualifier: 'const' | 'volatile'
+spec: spec_storage | spec_type | spec_qualifier | structure | enum
+
+structure: ( 'struct' | 'union' ) ID? ( '{' struct_def_list '}' )?
+struct_declarator: decl ( ':' exp )?
+struct_def_unit: spec* struct_declarator ( ',' struct_declarator )*
+struct_def_list: (struct_def_unit ';')*
+
+enum: 'enum' ID? ( '{' enum_def_list '}' )?
+enum_def_unit: ID ( '=' exp )?
+enum_def_list: enum_def_unit (',' enum_def_unit)*
+
+# -------------------------------------------
+
+decl: decl_pointer* decl_atom decl_postfix*
+
+decl_cplx: decl_pointer ( decl_cplx | ID )
+    | '(' ( decl_cplx | ID ) ')' '(' param_list? ')'
+
+decl_cplx_abs: decl_pointer decl_cplx_abs? 
+    | '(' decl_cplx_abs ')' '(' param_list? ')'
+
+decl_postfix: array_decl | function_decl
+decl_pointer: '*' spec_qualifier*
+
+array_decl: '[' exp? ']'
+function_decl: '(' ( param_list | id_list ) ')'
+
+id_list: ID ( ',' ID )*
+
+type: spec+  decl_cplx_abs?
+
+param: spec+ decl
+param_var: ',' '...'
+param_list: param ( ',' param )* param_var?
+
+# -------------------------------------------
+init: exp_single
+    | '{' init ( ',' init? )* '}'
+
+# -------------------------------------------
+declaration: 
+    | 'typedef' declaration
+    | spec+ decl_unit (',' decl_unit)* ';'
+    | spec+ ID '(' param_list | id_list ')' ';' 
+    | spec+ ID '(' param_list | id_list ')' param_list? '{' declaration* statement* '}'
+
+decl_unit: decl ( '=' init )?
+decl_list: decl_unit ( ',' decl_unit )*
+
+# -------------------------------------------
+statement: ID ':' statement
+    | 'case' exp ':' statement
+    | 'default' ':' statement
+    | exp ';'
+    | '{' declaration* statement* '}'
+    | 'if' '(' exp ')' statement ( 'else' statement )?
+    | 'switch' '(' exp ')' statement
+    | 'while' '(' exp ')' statement
+    | 'do' statement 'while' '(' exp ')'
+    | 'for' '(' exp? ';' exp? ';' exp? ')' statement
+    | 'goto' ID ';'
+    | 'continue' ';'
+    | 'break' ';'
+    | 'return' exp? ';'
+
+# -------------------------------------------
+prog: declaration*
+
+# -------------------------------------------
+ID: [_a-zA-Z]\w*
+
+$Oct: 0[0-7]+
+$Hex: 0[xX][0-9a-fA-F]+
+$Dec: \d+
+$I_Suffix: [uUlL]+
+
+Integer: ($Oct|$Hex|$Dec)($I_Suffix)?
+
+$Exp: [eE]-?\d+
+$F_Suffix: [fFlL]+
+
+Float: (\d*\.\d*|\d+)($Exp)?($F_Suffix)?
+
+Character: L?'([^']|\\')+'
+String: L?"([^"]|\\")*"
+
+Strings: String+
+
+%skip SKIP COMMENT
+
+SKIP: [ \t\n]
+COMMENT: \/\*.*?\*\/
+    | \/\/.*?\n

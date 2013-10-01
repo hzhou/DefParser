@@ -1,0 +1,46 @@
+include: c_fifo.def
+
+subcode:: _autoload
+    $call define_fifo_input, input_buffer
+    $struct(input_buffer) n_pos, n_tempchar, b_eof, b_tty
+
+    $list input_create, input_delete
+    $list input_get_char, input_get_str, input_dup_str
+
+fncode: input_create(FILE * f, n_buf_size)
+    $local struct input_buffer * b
+    $call fifo_create, input_buffer, b, n_buf_size
+    $call fifo_attach_file, b, f
+    b->n_pos=0
+    b->n_tempchar=0
+    return b
+
+fncode: input_delete(struct input_buffer * b)
+    $call fifo_delete, b
+
+# ----- 
+fncode: input_get_char(struct input_buffer * b)
+    $return_type int
+    $if b->n_tempchar
+	b->buffer[b->n_pos]=b->n_tempchar
+	b->n_tempchar=0
+    $if b->n_pos==b->n_end
+	$call fifo_input, b
+    tn_c=(int)(b->buffer[b->n_pos])
+    b->n_pos++
+    return tn_c
+
+fncode: input_get_str(struct input_buffer * b)
+    b->n_tempchar=b->buffer[b->n_pos]
+    b->buffer[b->n_pos]='\0'
+    return b->buffer+b->n_start
+
+fncode: input_dup_str(struct input_buffer * b)
+    tn_len=b->n_pos-b->n_start
+    $local s
+    $allocate(tn_len+1) s
+    memcpy(s, b->buffer+b->n_start, tn_len)
+    s[tn_len]='\0'
+    return s
+
+# -----------
