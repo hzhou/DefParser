@@ -18,4 +18,7 @@ ID: [a-zA-Z_]\w*
 
 EOL: \n
 
+%skip SKIP Comment
 SKIP: [ \t]
+
+Comment: /\*.*?\*/

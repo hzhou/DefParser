@@ -1,6 +1,8 @@
 
 # -------------------------------
 subcode: load_grammar(file)
+    $global %rules
+    $global %macros
     my $cur_rule
     my $cur_rule_name
     my $cur_rule_index
@@ -13,9 +15,18 @@ subcode: load_grammar(file)
 	$elif /^\%debug\s+(\w+)/
 	    $global $debug
 	    $debug=$1
+	$elif /^\%skip\s+(.*)/
+	    $global @skip_list
+	    my @tlist=split /\s+/, $1
+	    push @skip_list, @tlist
+	$elif /^\$(\w+):\s*(.*)/
+	    my ($name, $t)=($1, $2)
+	    $t=~s/\s+$//
+	    $macros{$name}=$t
 	$elif /^(\w+):\s*(.*)/
 	    my ($name, $t)=($1, $2)
 	    $if $name=~/^[A-Z]/
+		replace_macro(\$t)
 		$call add_regex, $name, $t
 	    $else
 		$cur_rule_name=$name
@@ -25,12 +36,30 @@ subcode: load_grammar(file)
 		$rules{$cur_rule_name}=$cur_rule
 		$if $t=~/^\%(left|right)\s*(.*)/
 		    die "Error: precedence cannot be at the top\n"
-		$call push_rule
+		$if $t!~/^\s*$/
+		    $call push_rule
 	$elif /^\s+\|\s*(.*)/
 	    $if !$cur_rule
 		die "Misplaced rule definition\n"
 	    my $t=$1
 	    $call push_rule
+
+subcode:: support_subs
+    $sub replace_macro($r)
+	$while $$r=~/\$\w+/
+	    my $flag=0
+	    my @t=split /(\$\w+)/, $$r
+	    $foreach $t in @t
+		$if $t=~/^\$(\w+)$/
+		    $if $macros{$1}
+			$t=$macros{$1}
+			$flag=1
+		    $else
+			warn "Lex macro $1 not defined\n"
+	    $if $flag==0
+		last
+	    $else
+		$$r=join('', @t)
 
 subcode: push_rule
     $call push_rule_getname
@@ -102,3 +131,4 @@ subcode: print_rule_name_sub
 	$call do_print, "printf(\"$name\")"
 	$indent--
     $indent--
+    $call do_print_ln

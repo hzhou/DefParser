@@ -93,7 +93,11 @@ subcode: parse_regex_normal
     $elsif $c eq '*' or $c eq '+' or $c eq '?'
 	$if !$natom
 	    die "REGEX $re: Empty '$c'\n";
-	push @dst, "]$c";
+	$if $dst[-1] =~/\][\*\+\?]/
+	    # non-greedy
+	    $dst[-1].='?'
+	$else
+	    push @dst, "]$c";
     $else
 	$call parse_regex_concat_previous_atoms
 	$if $c=~/](.+)/

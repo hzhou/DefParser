@@ -35,7 +35,10 @@ subcode: state_to_vm
 	push @vm,  ["Match", $1, 0, 0];
 	last;
     $elsif $state->{c} eq "Split"
-	push @vm, ["Split", 0, $state->{out1}, $state->{out2}];
+	$if $state->{nongreedy}
+	    push @vm, ["Split", 1, $state->{out2}, $state->{out1}];
+	$else
+	    push @vm, ["Split", 0, $state->{out1}, $state->{out2}];
 	push @threadstack, $state->{out1};
 	push @threadstack, $state->{out2};
 	last;

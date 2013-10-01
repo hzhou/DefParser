@@ -16,11 +16,11 @@ subcode:: _autoload
 		$call nfa_concat
 	    $elsif $c eq "]|"
 		$call nfa_or
-	    $elsif $c eq "]?"
+	    $elsif $c eq "]?" || $c eq "]??"
 		$call nfa_question
-	    $elsif $c eq "]*"
+	    $elsif $c eq "]*" || $c eq "]*?"
 		$call nfa_star
-	    $elsif $c eq "]+"
+	    $elsif $c eq "]+" || $c eq "]+?"
 		$call nfa_plus
 	    $else
 		$call nfa_char
@@ -82,6 +82,8 @@ subcode: nfa_question
     # zero instance
     push @out, {state=>$state, arrow=>"out2"}
     push @fragstack, {in=>$state, out=>\@out}
+    $if substr($c, 2, 1) eq '?'
+	$state->{nongreedy}=1
 
 subcode: nfa_star_state
     my $e=pop @fragstack;
@@ -95,6 +97,8 @@ subcode: nfa_star_state
     $call nfa_frag_connect, $e, $state
     my @out
     push @out, {state=>$state, arrow=>"out2"}
+    $if substr($c, 2, 1) eq '?'
+	$state->{nongreedy}=1
 
 subcode: nfa_star
     $call nfa_star_state
@@ -103,7 +107,7 @@ subcode: nfa_star
     #-->- [*] -> [e]
     #     \__________-->
     #
-    push @fragstack, {in=>$state, out=>[{state=>$state, arrow=>"out2"}]};
+    push @fragstack, {in=>$state, out=>\@out};
 
 subcode: nfa_plus
     $call nfa_star_state
@@ -113,5 +117,5 @@ subcode: nfa_plus
     #     \_____/____-->
     # -->----- / 
     #
-    push @fragstack, {in=>$e->{in}, out=>[{state=>$state, arrow=>"out2"}]};
+    push @fragstack, {in=>$e->{in}, out=>\@out};
 
