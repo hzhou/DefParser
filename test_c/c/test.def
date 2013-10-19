@@ -1,4 +1,3 @@
-include: parser_c.def
 include: parser.def
 
 page: test, basic_frame

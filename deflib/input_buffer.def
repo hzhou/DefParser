@@ -1,5 +1,3 @@
-include: c_fifo.def
-
 subcode:: _autoload
     $call define_fifo_input, input_buffer
     $struct(input_buffer) n_pos, n_tempchar, b_eof, b_tty

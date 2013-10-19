@@ -1,7 +1,8 @@
-include: input_buffer.def
-include: regex_vm.def
+include: DefParser/c_fifo.def
+include: DefParser/input_buffer.def
+include: DefParser/regex_vm.def
 
-include: parse_tree.def
+include: DefParser/parse_tree.def
 
 # --------------------------------------
 subcode:: _autoload
