@@ -8,6 +8,7 @@ page: make_parser_c, make_parser
 
     subcode: write_parser
 	$indent=0
+	$call do_print, "include: DefParser/parser_c.def"
 	$call write_lex_global
 	$call dump_out
 

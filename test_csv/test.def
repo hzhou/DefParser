@@ -1,0 +1,11 @@
+include: parser.def
+
+page: test
+    type: pl
+    subcode: main
+	$call @support_subs
+	my @tlist=get_csv("1, 2, Hui, Harry, \"Zhang, Xiaoyi\"")
+	my $i=1
+	$foreach $t in @tlist
+	    print "$i: $t\n"
+	    $i++

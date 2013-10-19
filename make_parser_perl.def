@@ -3,6 +3,8 @@ include: macro_regex/make_parser.def
 page: make_parser_perl, make_parser
     type: pl
     subcode: write_parser
+	$indent=0
+	$call do_print, "include: DefParser/parser_perl.def"
 	$call do_print, "subcode:: _autoload"
 	$indent=1
 	$call write_lexer_perl
