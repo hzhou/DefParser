@@ -1,0 +1,196 @@
+include: input_buffer.def
+include: regex_vm.def
+
+include: parse_tree.def
+
+# --------------------------------------
+subcode:: _autoload
+    $call global_darray, struct ast *, p_token_stack
+
+    $struct(token_stat) int count, int ast_type
+    $call global_darray, struct token_stat, p_token_count
+
+    $global n_token_count=0, n_ast_type=AST_GROUP
+    
+    $list push_token
+    $list push_token_group, pop_token_group
+
+# ----
+fncode: push_token(struct ast * p)
+    $call da_push, p_token_stack, p
+    n_token_count++
+
+fncode: push_token_group
+    $call da_push, p_token_count, {n_token_count, n_ast_type}
+    n_token_count=0
+
+fncode: pop_token_group
+    $call da_pop, p_token_count
+    n_token_count=$(item).count
+    n_ast_type=$(item).ast_type
+    n_token_count++
+
+# ----
+subcode: push_ast
+    push_token((struct ast *)$(ast))
+
+
+# ----------------------------------------
+# $call parser_global in global section
+# $(LA_DEPTH) need be defined
+subcode: parser_global(LA_DEPTH)
+    $(export:LA_DEPTH)
+    $global struct input_buffer * prog_input=NULL
+    $global struct regex_vm *     prog_vm=NULL
+    $global int prog_line=0
+    $(if:LA_DEPTH=1)
+	$global int prog_token=0
+	$define(LA) prog_token
+	$(export:token=prog_token)
+    $(else)
+	$global int prog_token[$(LA_DEPTH)+1]={0}
+	$global int token_pos[$(LA_DEPTH)+1]
+	$global int token_size[$(LA_DEPTH)+1]
+	$define(LA) prog_token[0]
+	$(export:token=prog_token[0])
+
+    $call function_look_ahead
+    $list dup_token_str
+
+subcode: look_ahead(n)
+    $(if:LA_DEPTH=1)
+	look_ahead()
+    $(else)
+	look_ahead($(n))
+
+# ----
+subcode: function_look_ahead
+    $(if:LA_DEPTH=1)
+	$function look_ahead
+	    $if !prog_token
+		$call input_start, prog_input
+		fetch_token:
+		$call fetch_token, prog_token
+    $(else)
+	$function look_ahead(n)
+	    $for i=0:n
+		$if !prog_token[i]
+		    break
+	    $if i==0
+		$call input_start, prog_input
+	    $if i<n
+		$while i<n
+		    fetch_token:
+		    token_pos[i]=prog_input->n_pos-prog_input->n_start
+		    $call fetch_token, prog_token[i]
+		    token_size[i]=prog_input->n_pos-prog_input->n_start-token_pos[i]
+		    i++
+
+subcode: fetch_token(token)
+    $(token)=regex_vm_match(prog_vm, prog_input)
+    $call @lex_actions
+
+# %skip will generate skip_token calls in parser.def
+subcode: skip_token(term)
+    $case $(token)==T_$(term)
+	$(if:hascode:on_lex_$(term))
+	    $call on_lex_$(term)
+	$(if:hascode:on_$(term))
+	    $call on_$(term)
+	goto fetch_token
+
+subcode: lex_action(name)
+    $(if:hascode:on_lex_$(name))
+	$case $(token)==T_$(name)
+	    $call on_lex_$(name)
+
+# -------------------------------------------------------
+fncode: dup_token_str
+    $(if:LA_DEPTH=1)
+	tn_len=prog_input->n_pos-prog_input->n_start
+	$local s
+	$allocate(tn_len+1) s
+	memcpy(s, prog_input->buffer+prog_input->n_start, tn_len)
+	s[tn_len]='\0'
+	return s
+    $(else)
+	tn_len=token_size[0]
+	$local s
+	$allocate(tn_len+1) s
+	memcpy(s, prog_input->buffer+prog_input->n_start+token_pos[0], tn_len)
+	s[tn_len]='\0'
+	return s
+
+# ----------------------------------------
+subcode: consume_token
+    $(if:LA_DEPTH=1)
+	prog_token=0
+    $(else)
+	$for i=0:$(LA_DEPTH)
+	    prog_token[i]=prog_token[i+1]
+	    token_pos[i]=token_pos[i+1]
+	    token_size[i]=token_size[i+1]
+
+subcode: match_error
+    $if $(token)>0
+	print "Parse error line %d: Expecting T_$(name), Got %s\n", prog_line, get_lex_name($(token))
+    exit(1)
+
+subcode: match_keyword(name)
+    $call look_ahead, 1
+    $if $(token)==T_$(name)
+	grab_token($(token))
+	$call consume_token
+    $else
+	$call match_error
+
+subcode: match_term(name)
+    $call look_ahead, 1
+    $if $(token)==T_$(name)
+	$(if:hascode:on_$(name))
+	    $call on_$(name)
+	$(else)
+	    grab_token($(token))
+	$call consume_token
+    $else
+	$call match_error
+
+# ----
+subcode:: _autoload
+    $list grab_token, concat_ast_group
+
+fncode: grab_token(tn_id)
+    $local ts_token_str
+    ts_token_str=dup_token_str()
+    $call new_ast_string, tn_id, ts_token_str
+    $call push_ast
+
+fncode: concat_ast_group(tn_id)
+    $call new_ast, group, tn_id
+    $(ast)->type=AST_GROUP
+    $(ast)->n=n_token_count
+    $if n_token_count>0
+	$(ast)->list=(struct ast**)malloc(n_token_count*sizeof(struct ast *))
+	j=p_token_stack_len-n_token_count
+	$for i=0:n_token_count
+	    $(ast)->list[i]=p_token_stack[j+i]
+	p_token_stack_len=j
+    $call push_ast
+
+# ----
+subcode: on_parse_finish(name)
+    $(if:hascode:on_$(name))
+	$call @on_$(name)
+    $(else)
+	$if n_token_count!=1
+	    concat_ast_group(G_$(name))
+
+# ---- Debug Routines ------------------------------------
+subcode: end_of_prog_check
+    $call look_ahead, 1
+    $if LA>0
+	print "Parser exits with left over input token(s) -- (%s)\n", get_lex_name(LA)
+
+subcode: print_stack
+    $for i=0:p_token_stack_len
+	print_ast(p_token_stack[i], 0)

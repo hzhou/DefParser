@@ -1,0 +1,70 @@
+include: parser_perl.def
+include: parser.def
+
+page: test
+    type: pl
+    subcode: main
+	$call load_file_content, $ARGV[0]
+	#$call test_lexer
+	$call test_parser
+
+subcode: load_file_content(filename)
+    $global $prog_input
+    $if open In, $(filename)
+	local $/
+	$prog_input=<In>
+	close In
+    $else
+	die "Can't open file ", $(filename), "\n"
+
+subcode: test_lexer
+    $while my $token=fetch_token()
+	$if !defined $token
+	    last
+	print "$token->[0]: \t[$token->[1]]\n"
+	
+subcode: test_parser
+    parse_prog()
+    print_token($parse_stack[0])
+
+subcode: print_parse_stack
+    $foreach $token in @parse_stack
+	print_token($token, 0)
+
+# subcode: debug_parse_function(name)
+    print "Parse $(name) ...\n"
+
+# subcode: debug_parse_finish(name)
+    print "---- parse finish $(name) [$cur_token_count] ----\n"
+    $call print_parse_stack
+
+# ========================================
+subcode: print_token_process
+    $if $token->[0] eq "stmt_compound"
+	$foreach $t in @{$token->[1]->[1]->[1]}
+	    print_token($t, $indent)
+	return
+    &call dump_token, declaration_2
+	$map dump, 0, " ", 1
+    &call dump_token, stmt_exp
+	$call dump, 0
+    &call dump_token, stmt_while
+	$map dump, "\$while ", 2, "\n"
+	print_token($token->[1]->[4], $indent+1)
+    &call dump_token, default_function_definition_2
+	$map dump, "fncode: ", 0, 1, 2, 3, "\n"
+	print_token($token->[1]->[4], $indent+1)
+
+# ----
+subcode: dump_token(name)
+    $case $token->[0]=~/^$(name)/
+	print "    "x$indent
+	BLOCK
+	print "\n"
+	return
+
+subcode: dump(name)
+    $(if:number:name)
+	dump_token($token->[1]->[$(name)])
+    $(else)
+	print $(name)

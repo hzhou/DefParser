@@ -1,0 +1,117 @@
+
+include: macro_regex/parse_regex.def
+include: macro_regex/build_nfa.def
+include: macro_regex/vm.def
+
+subcode: generate_lex
+    my @tree
+    my $count=0
+    $foreach $name in @lex_keywords
+	my $str=$lex_keyword_rules{$name}
+	my $re=parse_regex_keyword($str, "T_$name")
+	push @tree, @$re
+	$count++
+    $foreach $name in @lex_tokens
+	my $pattern=$lex_token_rules{$name}
+	my $re=parse_regex($pattern, "T_$name")
+	push @tree, @$re
+	$count++
+
+    $for $i=1:$count
+	push @tree, "]|"
+    my $vm=build_vm(build_nfa(\@tree))
+    # $call print_vm_c, lex
+
+# ----------------------
+subcode: write_lex_global
+    $indent=0
+    $call do_print, "subcode:: _autoload"
+    $indent++
+    $call print_lex_defs
+    $call print_vm_c, lex
+    $call do_print, "\$list get_lex_name"
+    $indent--
+    $call print_lex_name_sub
+
+subcode: write_parser_global
+    $indent=0
+    $call do_print, "subcode:: _autoload"
+    $indent++
+    $call print_rule_defs
+    $call do_print, "\$list get_rule_name"
+
+    $call do_print, "\$call parser_global, $max_la_depth"
+    $for $i=1:$max_la_depth
+	my $idx=$i+1
+	$call do_print, "\$define(LA$idx) prog_token[$i]"
+    $call define_LA_conditions
+    $call do_print, "\$list ", join(', ', @fnlist)
+
+    $indent--
+    $call print_rule_name_sub
+    $call print_lex_actions
+
+# ----------------------
+subcode: print_parser_lists
+    my $indent=0
+    $call do_print, "subcode:: _autoload"
+    $indent++
+    $indent--
+    $call do_print_ln
+
+# ----------------------
+subcode: print_lex_defs
+    my $idx=1
+    $foreach $name in @lex_keywords
+	$call do_print, "\$define(T_$name) $idx"
+	$idx++
+    $call do_print, "\$define(KEYWORD_MAX) $idx"
+    $foreach $name in @lex_tokens
+	$call do_print, "\$define(T_$name) $idx"
+	$idx++
+
+
+subcode: print_rule_defs
+    my $idx=1
+    &call each_rule_name
+	my $t=10000+$idx
+	$call do_print, "\$define(G_$name) $t"
+	$idx++
+    $call do_print_ln
+
+subcode: print_lex_name_sub
+    $call do_print, "fncode: get_lex_name(tn_token)"
+    $indent++
+    $foreach $name in @lex_keywords, @lex_tokens
+	$call do_print, "\$case tn_token==T_$name"
+	$call do_print, "    return \"$name\""
+    $call do_print, "\$else"
+    $call do_print, "    return NULL"
+    $indent--
+    $call do_print_ln
+
+subcode: print_rule_name_sub
+    $call do_print, "fncode: get_rule_name(tn_id)"
+    $indent++
+    $call do_print, "\$if tn_id<10000"
+    $call do_print, "    return get_lex_name(tn_id)"
+    &call each_rule_name
+	$call do_print, "\$case tn_id==G_$name"
+	$call do_print, "    return \"$name\""
+    $call do_print, "\$else"
+    $call do_print, "    return NULL"
+    $indent--
+    $call do_print_ln
+
+# ----------------------
+subcode: print_lex_actions
+    $if @skip_list or @lex_action_list
+	$call do_print, "subcode: lex_actions"
+	$indent++
+	$foreach $t in @skip_list
+	    $call do_print, "\$call skip_token, $t"
+	$foreach $t in @lex_action_list
+	    $call do_print, "\$call lex_action, $t"
+	$indent--
+	$call do_print_ln
+

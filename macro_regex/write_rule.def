@@ -1,148 +1,208 @@
 include: macro_regex/first_set.def
 
+subcode:: _autoload
+    $global $flag_debug
+
 subcode: parse_grammar
     my @fnlist
     &call topdown_loop, name, $top_symbol
-	my $nonterm_list=\@name_list
+	$call init_debug
 	my $rulelist=$rules{$name}
-	$indent=0
-	push @fnlist, "parse_$name"
-	$call do_print, "fncode: parse_$name"
+	$call parse_function_start
 	$indent++
-	$if $debug
-	    $call do_print, "print \"parse_$name\""
-	$call do_print, "\$call push_token_count"
-	my $k=0
-	$if @$rulelist==1
-	    $call do_rule_finish, $rulelist->[0]
-	$else
-	    $call check_left_factors
+	$call do_print, "\$call \@debug_parse_start, $name"
+	$call do_rule_alt, $rulelist
 
-	    my @i_list
-	    $for $i=0:@$rulelist
-		push @i_list, $i
-	    do_rule_pre_factor($k, $rulelist, \@i_list, $indent, $nonterm_list)
-	$call do_print, "\$call pop_token_count"
-	$if $debug
-	    $call do_print, "print \"    exit parse_$name\""
 	$call do_print_ln
 
-    my $indent=0
-    $call do_print, "subcode:: _autoload"
-    $indent++
-    $call do_print, "\$list ", join(', ', @fnlist)
-    $indent--
-    $call do_print_ln
+subcode: init_debug
+    $if $debug eq "ON" or $debug eq $name
+	$flag_debug=1
+    $else
+	$flag_debug=0
 
-# --------------------------------
+# --------------
+subcode: do_rule_alt(rulelist)
+    &call do_rule_token_group
+	$if @$(rulelist)==1
+	    $call do_rule_finish, $(rulelist)->[0]
+	$else
+	    $call check_left_factors, $(rulelist)
+	    my @i_list
+	    $for $i=0:@$(rulelist)
+		push @i_list, $i
+	    do_rule_pre_factor(0, $(rulelist), \@i_list, $indent)
+
+subcode: do_rule_optional(r)
+    my $r=$(r)
+    my ($lookahead, $depth)=get_look_ahead($r)
+    
+    $if $r->{type} eq "*" or $r->{type} eq "+"
+	$call do_print, "\$while 1"
+	$indent++
+	$call do_print, "\$call look_ahead, $depth"
+	$call do_print, "\$if !($lookahead)"
+	$call do_print, "    break"
+	$r=$r->{value}
+	$r->{name}=$name
+	do_rule($r, $indent)
+	$indent--
+    $else
+	$if $r->{type} eq "?"
+	    $r=$r->{value}
+	$call do_print, "\$call look_ahead, $depth"
+	$call do_print, "\$if $lookahead"
+	$indent++
+	$r->{name}=$name
+	do_rule($r, $indent)
+	$indent--
+
+# Detect: (exp ',')* exp
+subcode: check_group_ambiguity(set1, set2)
+    my %temp_hash
+    $foreach $s in @$(set1)
+	$if $s ne "EMPTY"
+	    $temp_hash{$s}=1
+    my @ambibuity
+    $foreach $s in @$(set2)
+	$if $temp_hash{$s}
+	    push @ambibuity, $s
+    $if @ambibuity
+	print "Ambiguity at pos $i: ", join(", ", @ambibuity), "\n"
+	print "    ",print_rule($rule), "\n"
+	print "    first set: ", join(", ", @$(set1)), "\n"
+	print "    second set: ", join(", ", @$(set2)), "\n"
+	die
+
+# ------------------------------------------------
 subcode:: _autoload
-    $sub do_rule($rule, $indent, $nonterm_list)
+    $sub do_rule($rule, $indent)
+	$call get_rule_name, $rule
 	my $error
 	my $type=$rule->{type}
+	$if !$name
+	    print "do_rule($type-noname): ", print_rule($rule), "\n"
 	$if $type eq "keyword"
 	    $call do_print, "\$call match_keyword, $rule->{value}"
 	$elif $type eq "term"
 	    $call do_print, "\$call match_term, $rule->{value}"
 	$elif $type eq "nonterm"
 	    $call do_print, "parse_$rule->{value}()"
-	    $if defined $nonterm_list
-		push @$nonterm_list, $rule->{value}
+	    push @topdown_list, $rule->{value}
 	$elif $type eq "group"
 	    my $tlist=$rule->{value}
-	    $call @check_group_ambiguity, $tlist
-	    $foreach $t in @$tlist
-		do_rule($t, $indent, $nonterm_list)
-	$elif $type eq "*" or $type eq "?"
-	    my $first_set=get_first($rule->{value})
-	    $call get_look_ahead, $first_set
-	    my $switch="\$if"
-	    $if $rule->{type} eq "*"
-		$switch="\$while"
-	    $call do_print, "$switch $lookahead"
-	    $indent++
-	    do_rule($rule->{value}, $indent, $nonterm_list)
-	    $if !$rule->{name}
-		warn "Concat rule missing name\n"
-	    $indent--
+	    $for $i=0:@$tlist
+		my $first_set=get_first($tlist->[$i])
+		$if $first_set->[0] eq "EMPTY" or $tlist->[$i]->{type} eq '+'
+		    my $second_set=get_first_sublist($tlist, $i+1)
+		    $call check_group_ambiguity, $first_set, $second_set
+		    $if $i<$#$tlist
+			&call do_rule_token_group
+			    $call do_rule_optional, $tlist->[$i]
+			    $call do_print, "\$call on_parse_finish, group"
+		    $else
+			$call do_rule_optional, $tlist->[$i]
+		$else
+		    $tlist->[$i]->{name}=$name
+		    do_rule($tlist->[$i], $indent)
+	$elif $type eq "*" or $type eq "?" or $type eq "+"
+	    $call do_rule_optional, $rule
 	$elif $type eq "empty"
-	    # skip
+	    print "Error: do_rule(empty)!\n"
+	    die
 	$elif $type eq "alt"
-	    my $rlist=$rule->{value}
-	    my $flag=1
-	    $foreach $r in @$rlist
-		$if $r->{type} !~/^(keyword|term)$/
-		    $flag=0
-	    $if $flag
-		$call do_print, "\$call grab_token"
-		$call do_print, "\$call consume_token"
-	    $else
-		$error=1
+	    my $rulelist=$rule->{value}
+	    my $i=1
+	    $foreach $r in @$rulelist
+		my $r_name=$name."_$i"
+		$r->{name}=$r_name
+		$call add_rule_name, $r_name
+		$i++
+	    $call do_rule_alt, $rulelist
 	$else
-	    $error=1
+	    $error="Rule type [$type] not recognized."
 
 	$if $error
 	    print "    "x$indent
-	    print "ERROR do_rule: "
-	    print_rule($rule)
-	    print "\n"
-
-    $sub do_rule_factor($k, $rulelist, $i_list, $indent, $nonterm_list)
-	$call get_rule_list, $rulelist->[$i_list->[0]], $rlist
-	my $factor=$rlist->[$k]->{factor}
-	$while $k<@$rlist and $rlist->[$k]->{factor} eq $factor
-	    do_rule($rlist->[$k], $indent, $nonterm_list)
-	    $k++
-
-	do_rule_pre_factor($k, $rulelist, $i_list, $indent, $nonterm_list)
+	    print "do_rule errro: $error\n"
+	    print "    "x$indent
+	    print "    in rule: ", print_rule($rule), "\n"
 
 # --------------------------------
 subcode:: _autoload
-    $sub do_rule_pre_factor($k, $rulelist, $i_list, $start_indent, $nonterm_list)
+    $sub do_rule_pre_factor($k, $rulelist, $i_list, $start_indent)
+	$call push_out
+	my $la_depth=0
+
 	my $num_total=@$i_list
 	my $num_remain=$num_total
-	# $call @check_token_ambiguity
 	$call get_alt_set
+	my $indent=$start_indent
 	$for $i=0:$num_total
-	    my $indent=$start_indent
 	    my $r=$alt_set[$i]
-	    #print "alt #$i: $r->{type} $num_remain/$num_total\n"
-	    $if $num_remain==1
-		$call do_print_else
-		$call do_rule_r
+	    $call get_rule_name, $r
+	    $if !$name
+		print "do_rule_pre_factor-noname: ", print_rule($r), "\n"
+	    $call do_rule_pre_factor_i
+	&call pop_out
+	    $if $la_depth>0
+		$call do_print, "\$call look_ahead, $la_depth"
+
+subcode: do_rule_pre_factor_i
+    $if $num_remain==1
+	$call do_print, "\$else"
+	$indent++
+	$call do_rule_finish, $r
+	$indent--
+	$num_remain--
+    $else
+	$call get_rule_list, $r, $rlist
+	my $factor=$rlist->[0]->{factor}
+	$if !defined $factor
+	    # ---- Unique look ahead, need check ambiguity --
+	    my ($lookahead, $depth)=get_look_ahead($r)
+	    $if $depth>$la_depth
+		$la_depth=$depth
+	    $call do_print, "\$case $lookahead"
+	    $indent++
+	    $call do_rule_finish, $r
+	    $indent--
+	    $num_remain--
+	$elif $factor eq "1"
+	    # ---- Should not happen -------------------
+	    # skip
+	$else
+	    # ---- Left factoring -----------------------
+	    my @factors=split /-/, $factor
+	    $if $num_remain==@factors
+		$if $num_remain<$num_total
+		    $call do_print, "\$else"
+		    $indent++
 	    $else
-		$call get_rule_list, $r, $rlist
-		$if !defined $rlist->[0]->{factor}
-		    $call do_print_LA1
-		    $call do_rule_r
-		$elif $rlist->[0]->{factor} eq "1"
-		    # skip
-		$else
-		    my @factors=split /-/, $rlist->[0]->{factor}
-		    $if $num_remain==@factors
-			$if $num_remain<$num_total
-			    $call do_print_else
-		    $else
-			$call do_print_LA1
-		    do_rule_factor($k, $rulelist, \@factors, $indent, $nonterm_list)
+		my ($lookahead, $depth)=get_look_ahead($r)
+		$if $depth>$la_depth
+		    $la_depth=$depth
+		$call do_print, "\$case $lookahead"
+		$indent++
+	    $call do_rule_factor
+	    # use original rulelist to maintain alt indenx name
+	    do_rule_pre_factor($k+$i, $rulelist, \@factors, $indent)
+	    $indent--
 
-subcode: do_print_else
-    $call do_print, "\$else"
-    $indent++
-
-subcode: do_print_LA1
-    my $set=get_first($r)
-    $call get_look_ahead, $set
-    $call do_print, "\$case $lookahead"
-    $indent++
-
-subcode: do_rule_r
-    $call do_rule_finish, $r
-    $num_remain--
+subcode: do_rule_factor
+    my $i=0
+    $while $i<@$rlist and $rlist->[$i]->{factor} eq $factor
+	$rlist->[$i]->{name}=$name
+	do_rule($rlist->[$i], $indent)
+	$i++
 
 subcode: do_rule_finish(rule)
-    do_rule($(rule), $indent, $nonterm_list)
+    do_rule($(rule), $indent)
     $call get_rule_name, $(rule)
+    $if !$name
+	$name="group"
     $call do_print, "\$call on_parse_finish, $name"
+    $call do_print, "\$call \@debug_parse_finish, $name"
 
 # -----
 subcode: get_alt_set
@@ -152,12 +212,15 @@ subcode: get_alt_set
     $foreach $i in @$i_list
 	my $r=$rulelist->[$i]
 	$call get_rule_name, $r
+	$if !$name
+	    print "get_alt_set - $i - noname: ", print_rule($r), "\n"
 	$if $k==0
 	    $r->{index}=$i
 	    push @alt_set, $r
-	$elif $r->{type} ne "group" && $k==1
+	$elif $r->{type} ne "group" && $k>=1
 	    $call set_empty_alt
 	$else
+	    # $r is group rule
 	    my $tlist=$r->{value}
 	    $if $k>=@$tlist
 		$call set_empty_alt
@@ -175,75 +238,47 @@ subcode: set_empty_alt
     $empty_alt=$i
     $empty_alt_name=$name
 
-# ------------------------------------------------
-
-subcode: get_look_ahead(set)
-    my @t
-    $for $t in @$(set)
-	push @t, "LA()==$t"
-    my $lookahead=join(" || ", @t)
-
-# == AMBIGUITY CHEC ============================
-# Detect: (exp ',')* exp
-subcode: check_group_ambiguity(list)
-    my @temp_set
-    my $i=0
-    my $first_set=get_first($(list)->[0])
-    $while $i+1<@$(list)
-	my $second_set=get_first($(list)->[$i+1])
-	$if $empty_set_hash{$(list)->[$i]} 
-	    push @temp_set, @$first_set
-	    $foreach $t2 in @$second_set
-		$foreach $t1 in @temp_set
-		    $if $t2 eq $t1
-			print "Ambiguity: "
-			print_rule($(list)->[$i])
-			print_rule($(list)->[$i+1])
-			print " [$t2]\n"
-			die
-	$else
-	    @temp_set=()
-	$first_set=$second_set
-	$i++
-
-# Detect: ID | ID '(' explist ')'
-subcode: check_token_ambiguity
-    $for $j=$i+1:$num_total
-	my $t_set=$alt_set[$j]
-	$foreach $t1 in @$set
-	    $if grep {$_ eq $t1} @$t_set
-		print "Ambiguity: $name\n"
-		print "    "
-		print_rule($rulelist->[$i])
-		print "\n"
-		print "    "
-		print_rule($rulelist->[$j])
-		print "\n"
-		die
-
 # -- Left Factoring --------------------------------
-subcode: check_left_factors
-    $for $i=0:@$rulelist
-	$call get_rule_list, $rulelist->[$i], $list_i
-	$for $j=$i+1:@$rulelist
-	    $call get_rule_list, $rulelist->[$j], $list_j
+subcode:: _autoload
+    $sub cmp_rule($a, $b)
+	$if $a->{type} ne $b->{type}
+	    return 1
+	$if $a->{type} =~/^(keyword|term|nonterm)/
+	    return $a->{value} ne $b->{value}
+	$elif $a->{type} eq "alt" or $a->{type} eq "group"
+	    my $alist=$a->{value}
+	    my $blist=$b->{value}
+	    $if @$alist != @$blist
+		return 1
+	    $for $i=0:@$alist
+		$if cmp_rule($alist->[$i], $blist->[$i])
+		    return 1
+	    return 0
+	$else
+	    return cmp_rule($a->{value}, $b->{value})
+
+subcode: check_left_factors(rulelist)
+    $for $i=0:@$(rulelist)
+	$call get_rule_list, $(rulelist)->[$i], $list_i
+	$for $j=$i+1:@$(rulelist)
+	    $call get_rule_list, $(rulelist)->[$j], $list_j
 	    $for $k=0:@$list_i
 		my $a=$list_i->[$k]
 		my $b=$list_j->[$k]
-		$if $a->{factor}==1 
+		$if $a->{factor} eq "1" 
 		    next
-		$elif $a->{type} eq $b->{type} && $a->{value} eq $b->{value}
+		$elif cmp_rule($a, $b)==0
 		    $if !$a->{factor}
 			$a->{factor}="$i"
 		    $a->{factor}.="-$j"
-		    $b->{factor}=1
+		    $b->{factor}="1"
 		$else
 		    last
-    # $call print_left_factors
+	# $call print_left_factors
 
 subcode: print_left_factors
-    $for $i=0:@$rulelist
-	$call get_rule_list, $rulelist->[$i], $list_i
+    $if $name eq "declaration"
+	print "$name - $i: "
 	$for $k=0:@$list_i
 	    my $a=$list_i->[$k]
 	    print "[$a->{factor}] "
@@ -259,4 +294,93 @@ subcode: get_rule_list(rule, rlist)
     $else
 	$(rlist)=[$rule]
 
+# ===============================================
+subcode:: support_subs
+    $sub get_look_ahead($r)
+	my $depth=1
+	$if $r->{type} =~ /[*?+]/
+	    return get_look_ahead($r->{value})
+	$elif $r->{type} eq "group"
+	    my $tlist=$r->{value}
+	    return get_look_ahead_sublist($tlist, 0)
+
+	$call @lookahead_cache_check
+	my $set=get_first($r)
+	my ($lookahead, $depth)=get_look_ahead_fromset($set, $depth)
+	$call @lookahead_cache_save
+
+	return ($lookahead, $depth)
+
+    $sub get_look_ahead_sublist($list, $i)
+	$if !$list->[$i+1]
+	    return get_look_ahead($list->[$i])
+	my $set=get_first($list->[$i])
+	$if $set->[0] ne "EMPTY"
+	    return get_look_ahead($list->[$i])
+	$else
+	    my ($la1, $d1)=get_look_ahead($list->[$i])
+	    my ($la2, $d2)=get_look_ahead_sublist($list, $i+1)
+	    $if $d2>$d1
+		$d1=$d2
+	    return ("$la1 || $la2", $d1)
+
+    $sub get_look_ahead_fromset($set, $base_depth)
+	my $depth=$base_depth
+	my @partlist
+	$call lookahead_fromset
+	my $lookahead=join(" || ", @partlist)
+	return ($lookahead, $depth)
+
+subcode: get_look_ahead_custom(t)
+    my @tlist=split /(LA\d+[^&|\)]*)/, $(t)
+    $foreach $t in @tlist
+	$if $t=~/LA(\d*)\s*=\s*(.*)/
+	    my ($la_depth, $terms)=($1, $2)
+	    $call get_look_ahead_custom_depth
+	    my @term_list=split /(,\s*)/, $terms
+	    my @subset
+	    $call get_look_ahead_custom_subset, term_list
+	    my @la= get_look_ahead_fromset(\@subset, $la_depth)
+	    $t="($la[0])"
+	    $if $depth<$la[1]
+		$depth=$la[1]
+    my $lookahead_custom="(". join('', @tlist).")"
+
+subcode: get_look_ahead_custom_depth
+    $if $la_depth>1
+	$la_depth=$base_depth+($la_depth-1)
+	$if $depth<$la_depth
+	    $depth=$la_depth
+	$global $max_la_depth=1
+	$if $max_la_depth<$depth
+	    $max_la_depth=$depth
+
+subcode: get_look_ahead_custom_subset(termlist)
+    my %sub_hash
+    my $segment
+    $foreach $term in @$(termlist)
+	$if $segment
+	    $term=$segment.$term
+	    undef $segment
+	$if $term=~/^'(.+)'/
+	    $call generate_keyword_name, $1
+	    $call get_look_ahead_custom_subadd, $name
+	$elif $term=~/^([A-Z]\w*)/
+	    $call get_look_ahead_custom_subadd, $1
+	$elif $term=~/^(\w+)/
+	    my $set=get_first({"type"=>"nonterm", "value"=>$1})
+	    $foreach $name in @$set
+		$call get_look_ahead_custom_subadd, $name
+	$elif $term=~/^'/
+	    $segment=$term
+	$elif $term=~/^,/
+	    next
+	$else
+	    print "Error in custom lookahead: $term [$terms]\n"
+	    die
+
+subcode: get_look_ahead_custom_subadd(name)
+    $if !$sub_hash{$(name)}
+	$sub_hash{$(name)}=1
+	push @subset, "$(name)"
 

@@ -1,0 +1,65 @@
+include: macro_regex/write_rule_c.def
+include: macro_regex/make_parser.def
+
+page: make_parser_c, make_parser
+    type: pl
+    subcode: prepare_parser
+	$call generate_lex
+
+    subcode: write_parser
+	$indent=0
+	$call write_lex_global
+	$call dump_out
+
+	$indent=0
+	$call do_print_ln
+	$call parse_grammar
+	$call write_parser_global
+	$call dump_out
+
+# ===============================================
+subcode: parse_function_start
+    $indent=0
+    push @fnlist, "parse_$name"
+    $call do_print, "fncode: parse_$name"
+
+subcode: do_rule_token_group
+    $call do_print, "push_token_group()"
+    BLOCK
+    $call do_print, "pop_token_group()"
+
+# ===============================================
+subcode: lookahead_fromset
+    my $LA="LA"
+    $if $base_depth>1
+	$LA="LA$base_depth"
+
+    $for $t in @$set
+	$if $t=~/^CUSTOM:(.*)/
+	    $call get_look_ahead_custom, $1
+	    push @partlist, $lookahead_custom
+	$else
+	    $if $t ne "EMPTY"
+		push @partlist, "$LA==T_$t"
+
+subcode: lookahead_cache_check
+    $if $lookahead_cache{$r}
+	$if $lookahead_cache{$r}=~/^(\w+) (\d+) (.*)/
+	    return ($1, $2)
+
+subcode: lookahead_cache_save
+    $global %lookahead_cache
+    $if length($lookahead)>15
+	$if $r->{type} eq "nonterm"
+	    my $name="LA_$r->{value}"
+	    $lookahead_cache{$r->{value}}="$name $depth $lookahead"
+	    $lookahead=$name
+	$elif 0
+	    print "---> $r->{type}: ",print_rule($r), "\n"
+	    print $lookahead, "\n\n"
+
+subcode: define_LA_conditions
+    $while my ($k, $v)=each %lookahead_cache
+	$if $v=~/^(\w+) \d+ (.*)/
+	    $call do_print, "\$define($1) ($2)"
+

@@ -3,6 +3,7 @@
 subcode: load_grammar(file)
     $global %rules
     $global %macros
+    $global %FIRST
     my $cur_rule
     my $cur_rule_name
     my $cur_rule_index
@@ -19,10 +20,18 @@ subcode: load_grammar(file)
 	    $global @skip_list
 	    my @tlist=split /\s+/, $1
 	    push @skip_list, @tlist
+	$elif /^\%lex_action\s+(.*)/
+	    $global @lex_action_list
+	    my @tlist=split /\s+/, $1
+	    push @lex_action_list, @tlist
 	$elif /^\$(\w+):\s*(.*)/
 	    my ($name, $t)=($1, $2)
 	    $t=~s/\s+$//
 	    $macros{$name}=$t
+	$elif /^FIRST\((\w+)\):\s*(.*)/
+	    my ($name, $t)=($1, $2)
+	    $t=~s/\s+$//
+	    $FIRST{$name}="CUSTOM:$t"
 	$elif /^(\w+):\s*(.*)/
 	    my ($name, $t)=($1, $2)
 	    $if $name=~/^[A-Z]/
@@ -61,9 +70,10 @@ subcode:: support_subs
 	    $else
 		$$r=join('', @t)
 
+# -- Loading individual rule ---------------------
 subcode: push_rule
     $call push_rule_getname
-    $if $t=~/^\%(left|right)\s*(.*)/
+    $if $t=~/^\%(left|right|tripple)\s*(.*)/
 	my $temp_rule_name=$cur_rule_name."_$cur_rule_level"
 	$rules{$temp_rule_name}=$cur_rule
 
@@ -75,6 +85,9 @@ subcode: push_rule
 	    $t="$temp_rule_name (($2) $temp_rule_name)*"
 	$elif $1 eq "right"
 	    $t="$temp_rule_name (($2) RECURSE)?"
+	$elif $1 eq "tripple"
+	    my ($op1, $op2)=split /,\s*/, $2
+	    $t="$temp_rule_name ($op1 RECURSE $op2 RECURSE)?"
 	$call push_rule_direct
     $else
 	$call push_rule_direct
@@ -85,8 +98,6 @@ subcode: push_rule_direct
     push @$cur_rule, $rule
 
 subcode: push_rule_getname
-    $global @rule_name_list=("group")
-    $global %rule_name_mult
     my $name=$cur_rule_name
     $cur_rule_index++
 
@@ -95,40 +106,116 @@ subcode: push_rule_getname
 	$t=$2
     $elif $cur_rule_index>1
 	$name=$cur_rule_name."_".$cur_rule_index
-	$rule_name_mult{$cur_rule_name}=1
-    push @rule_name_list, $name
+	$rule_name_hash{$cur_rule_name}=$cur_rule_name."_1"
+    $call add_rule_name, $name
+
+# ---- Rule Names -----------------------------
+subcode:: _autoload
+    $global @rule_name_list
+    $global %rule_name_hash
+    $call add_rule_name, "group"
+    $call add_rule_name, "number"
+
+subcode: add_rule_name(name)
+    $if !$rule_name_hash{$(name)}
+	push @rule_name_list, $(name)
+    $else
+	print "Duplicate rule name: ". $(name). "\n"
+    $rule_name_hash{$(name)}=$(name)
+
 # ############################################
 subcode: each_rule_name
-    $foreach $name in @rule_name_list
-	$if $rule_name_mult{$name}
-	    $name.="_1"
+    $foreach $_ in @rule_name_list
+	my $name=$_
+	$if $rule_name_hash{$name}
+	    $name=$rule_name_hash{$name}
 	BLOCK
 
 subcode: get_rule_name(rule)
     my $name=$(rule)->{name}
-    $if $rule_name_mult{$name}
-	$name.="_1"
+    $if $rule_name_hash{$name}
+	$name=$rule_name_hash{$name}
 
 subcode: get_rule_name_concat(rule)
     $call get_rule_name, $(rule)
     $name.="_concat"
-    push @rule_name_list, $name
+    $call add_rule_name, $name
 
-subcode: print_rule_defs
-    my $idx=0
-    &call each_rule_name
-	my $t=10000+$idx
-	$call do_print, "\$define($name) $t"
-	$idx++
-    $call do_print_ln
+# ---- Lex Names -----------------------------
+subcode:: _autoload
+    $call init_KeyName
 
-subcode: print_rule_name_sub
-    $call do_print, "subcode: print_rule_name(var)"
-    $indent++
-    &call each_rule_name
-	$call do_print, "\$case \$(var)==$name"
-	$indent++
-	$call do_print, "printf(\"$name\")"
-	$indent--
-    $indent--
-    $call do_print_ln
+    $sub get_keyname($key)
+	$call generate_keyword_name($key)
+	return $name
+
+subcode: add_regex(name, pattern)
+    $global %lex_token_rules
+    $global @lex_tokens
+    $if !$lex_token_rules{$(name)}
+	push @lex_tokens, $(name)
+	$lex_token_rules{$(name)}=$(pattern)
+
+subcode: generate_keyword_name(k)
+    $global %lex_keyword_rules
+    $global @lex_keywords
+
+    my @t
+    $for $i=0:length($(k))
+	my $c=substr($(k), $i, 1)
+	$if $KeyName{$c}
+	    push @t, $KeyName{$c}
+	$elif $c=~/[0-9]/
+	    push @t, $c
+	$elif $c=~/[a-zA-Z]/
+	    push @t, uc($c)
+	$else
+	    die "Missing KeyName for '$c'\n"
+    my $name=join('', @t)
+    $if $name=~/^\d/
+	$name="_$name"
+    $if $lex_keyword_rules{$name} and $lex_keyword_rules{$name} ne $(k)
+	my $tid=2
+	$while $lex_keyword_rules{"$name\_$tid"} and $lex_keyword_rules{"$name\_$tid"} ne $(k)
+	    $tid++
+	$name="$name\_$tid"
+
+    $if !$lex_keyword_rules{$name}
+	push @lex_keywords, $name
+	$lex_keyword_rules{$name}=$(k)
+
+subcode: init_KeyName
+    my %KeyName=(
+	'(' => "Lp",
+	')' => "Rp",
+	'>' => "Gt",
+	'<' => "Lt",
+	'=' => "Eq",
+	'*' => "Star",
+	'/' => "Slash",
+	'+' => "Plus",
+	'-' => "Minus",
+	'!' => "Not",
+	'^' => "Ctrl",
+	'@' => "At",
+	'#' => "Pound",
+	'$' => "Dollar",
+	'%' => "Percent",
+	'&' => "And",
+	'[' => "Lb",
+	']' => "Rb",
+	'{' => "Lc", 
+	'}' => "Rc",
+	':' => "Colon",
+	';' => "Semicolon",
+	'`' => "Lq",
+	"'" => "Rq",
+	'"' => "Dq",
+	',' => "Comma",
+	'.' => "Dot",
+	'?' => "Qm",
+	'|' => "Or",
+	'~' => "Tilde",
+	'\\'=> "Backslash",
+	)
+

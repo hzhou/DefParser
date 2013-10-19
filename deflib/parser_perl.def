@@ -1,0 +1,84 @@
+subcode:: _autoload
+    $global @token_stack
+
+    $global @parse_stack
+
+    $global @parse_context
+    $global $cur_token_count=0
+
+subcode: push_token_group
+    push @parse_context, $cur_token_count
+    $cur_token_count=0
+
+subcode: pop_token_group
+    $cur_token_count=pop @parse_context
+    $cur_token_count++
+    
+subcode: look_ahead(n)
+    $for $i=0:$(n)
+	$if !$token_stack[$i]
+	    $token_stack[$i]=fetch_token()
+
+subcode: match_error
+    print "Parse error: Expecting T_$(name), Got $token_stack[0]->[1]\n"
+
+subcode: match_keyword(name)
+    $call look_ahead, 1
+    $if $token_stack[0]->[0] eq "KEYWORD"
+	push @parse_stack, shift @token_stack
+	$cur_token_count++
+    $else
+	$call match_error
+
+subcode: match_term(name)
+    $call look_ahead, 1
+    $if $token_stack[0]->[0] eq "$(name)"
+	$(if:hascode:on_$(name))
+	    my $token=shift @token_stack
+	    $call on_$(name)
+	$(else)
+	    push @parse_stack, shift @token_stack
+	    $cur_token_count++
+    $else
+	$call match_error
+
+subcode: on_parse_finish(name)
+    $(if:hascode:on_$(name))
+	$call @on_$(name)
+    $(else)
+	$if $cur_token_count==0
+	    push @parse_stack, ["$(name)", undef]
+	$elif $cur_token_count>1
+	    my @tlist=splice(@parse_stack, -$cur_token_count)
+	    push @parse_stack, ["$(name)", \@tlist]
+
+# =======================================================
+subcode: process_token(subname)
+    $sub $(subname)($token)
+
+subcode:: _autoload
+    $sub print_token($token, $indent)
+	$call @print_token_process
+	$if $indent>0
+	    print "    "x $indent
+	print "[$token->[0]]: "
+	$if ref($token->[1]) eq "SCALAR"
+	    print $token->[1], "\n"
+	$elif ref($token->[1]) eq "ARRAY"
+	    print "\n"
+	    $foreach $t in @{$token->[1]}
+		print_token($t, $indent+1)
+	$else
+	    print "$token->[1]\n"
+
+subcode:: _autoload
+    $sub dump_token($token)
+	$call @dump_token_process
+	$if ref($token->[1]) eq "SCALAR"
+	    # print "$token->[1]"
+	$elif ref($token->[1]) eq "ARRAY"
+	    $foreach $t in @{$token->[1]}
+		dump_token($t)
+	$else
+	    print "$token->[1]"
+

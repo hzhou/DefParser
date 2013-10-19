@@ -1,14 +1,7 @@
 %grammar prog
 
-prog: unit*
-unit: function
-    | decl 
-
-function: spec_list? 
-
-# ----
 exp_atom: ID | Integer | Float | Character
-    | Strings
+    | strings
     | '(' exp ')'
 
 # ----
@@ -24,7 +17,11 @@ struct_reference: ('.' | '->') ID
 inc_dec: '++' | '--'
 
 # ----
-exp_unary: ( '++' | '--' | '&' | '*' | '+' | '-' | '~' | '!' | TypeCast | 'sizeof' )* exp_postfix
+exp_unary: exp_postfix
+    | ( '++' | '--' | '&' | '*' | '+' | '-' | '~' | '!' | typecast | 'sizeof' )+ exp_postfix
+typecast: '(' spec+ decl? ')'
+
+FIRST(typecast): LA1='(' && LA2=spec
 
 # ----
 exp_single: exp_unary
@@ -43,10 +40,15 @@ exp_single: exp_unary
 exp: exp_single (',' exp_single)*
 
 # -------------------------------------------
-spec_storage: 'auto' | 'register' | 'static' | 'extern'
-spec_type: 'void' | 'char' | 'short' | 'int' | 'long' | 'float' | 'double' | 'signed' | 'unsigned' 
-spec_qualifier: 'const' | 'volatile'
-spec: spec_storage | spec_type | spec_qualifier | structure | enum
+SpecStorage: auto|register|static|extern
+SpecType: void|char|short|int|long|float|double|signed|unsigned
+SpecQualifier: const|volatile
+# -------------------------------------------
+spec: SpecStorage 
+    | SpecType 
+    | SpecQualifier 
+    | structure 
+    | enum
 
 structure: ( 'struct' | 'union' ) ID? ( '{' struct_def_list '}' )?
 struct_declarator: decl ( ':' exp )?
@@ -58,27 +60,18 @@ enum_def_unit: ID ( '=' exp )?
 enum_def_list: enum_def_unit (',' enum_def_unit)*
 
 # -------------------------------------------
+decl_atom: ID | '(' decl ')'
+decl: decl_pointer* ( decl_atom decl_suffix* )?
 
-decl: decl_pointer* decl_atom decl_postfix*
-
-decl_cplx: decl_pointer ( decl_cplx | ID )
-    | '(' ( decl_cplx | ID ) ')' '(' param_list? ')'
-
-decl_cplx_abs: decl_pointer decl_cplx_abs? 
-    | '(' decl_cplx_abs ')' '(' param_list? ')'
-
-decl_postfix: array_decl | function_decl
-decl_pointer: '*' spec_qualifier*
-
-array_decl: '[' exp? ']'
-function_decl: '(' ( param_list | id_list ) ')'
+decl_suffix: '[' exp? ']'
+    | '(' param_list? ')'
+decl_pointer: '*' SpecQualifier*
 
 id_list: ID ( ',' ID )*
 
-type: spec+  decl_cplx_abs?
-
 param: spec+ decl
 param_var: ',' '...'
+FIRST(param_var): LA1=',' && LA2='...'
 param_list: param ( ',' param )* param_var?
 
 # -------------------------------------------
@@ -88,22 +81,32 @@ init: exp_single
 # -------------------------------------------
 declaration: 
     | 'typedef' declaration
-    | spec+ decl_unit (',' decl_unit)* ';'
-    | spec+ ID '(' param_list | id_list ')' ';' 
-    | spec+ ID '(' param_list | id_list ')' param_list? '{' declaration* statement* '}'
+    | spec+ decl_unit_list ';'
+    | spec+ ID '(' param_list? ')' ';' 
+    | spec+ ID '(' id_list ')' ( spec+ decl_list ';' )* stmt_compound
+    | spec+ ID '(' param_list? ')' stmt_compound
+
+default_function_definition:
+    | ID '(' id_list ')' ( spec+ decl_list ';' )* stmt_compound
+    | ID '(' param_list? ')' stmt_compound
+
+stmt_compound: '{' (declaration | statement)* '}'
+
 
 decl_unit: decl ( '=' init )?
-decl_list: decl_unit ( ',' decl_unit )*
+decl_unit_list: decl_unit ( ',' decl_unit )*
+decl_list: decl ( ',' decl)*
+
 
 # -------------------------------------------
-statement: ID ':' statement
+statement: label statement
     | 'case' exp ':' statement
     | 'default' ':' statement
-    | exp ';'
-    | '{' declaration* statement* '}'
+    | stmt_exp: exp ';'
+    | stmt_compound
     | 'if' '(' exp ')' statement ( 'else' statement )?
     | 'switch' '(' exp ')' statement
-    | 'while' '(' exp ')' statement
+    | stmt_while: 'while' '(' exp ')' statement
     | 'do' statement 'while' '(' exp ')'
     | 'for' '(' exp? ';' exp? ';' exp? ')' statement
     | 'goto' ID ';'
@@ -111,11 +114,17 @@ statement: ID ':' statement
     | 'break' ';'
     | 'return' exp? ';'
 
+label: ID ':'
+FIRST(label): LA1=ID && LA2=':'
 # -------------------------------------------
-prog: declaration*
+prog: (declaration | default_function_definition)*
 
-# -------------------------------------------
-ID: [_a-zA-Z]\w*
+# -- Lexer rules, order matters, especially for perl implementations ---------
+$Exp: [eE][+-]?\d+
+$F_Suffix: [fFlL]+
+$F_Stem: (\d+\.\d*|\.\d+)
+
+Float: ($F_Stem($Exp)?|\d+$Exp)($F_Suffix)?
 
 $Oct: 0[0-7]+
 $Hex: 0[xX][0-9a-fA-F]+
@@ -124,18 +133,16 @@ $I_Suffix: [uUlL]+
 
 Integer: ($Oct|$Hex|$Dec)($I_Suffix)?
 
-$Exp: [eE]-?\d+
-$F_Suffix: [fFlL]+
-
-Float: (\d*\.\d*|\d+)($Exp)?($F_Suffix)?
-
 Character: L?'([^']|\\')+'
 String: L?"([^"]|\\")*"
 
-Strings: String+
+strings: String+
 
-%skip SKIP COMMENT
+ID: [_a-zA-Z]\w*
+%lex_action ID
 
-SKIP: [ \t\n]
-COMMENT: \/\*.*?\*\/
-    | \/\/.*?\n
+%skip SKIP COMMENT_1 COMMENT_2
+
+SKIP: [ \t\r\n]
+COMMENT_1: /\*.*?\*/
+COMMENT_2: //.*?\n

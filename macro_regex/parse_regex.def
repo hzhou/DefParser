@@ -1,6 +1,31 @@
+subcode: esc_char(c)
+    $case $c eq "$(c)"
+	return "\$(c)"
+subcode: unesc_char(c)
+    $case $c eq "\$(c)"
+	return "'\\$(c)'"
+
 subcode:: _autoload
     # input: $re: regex pattern
     # output: \@dst
+    $sub esc_char($c)
+	$if $c eq "0"
+	    return undef
+	$map esc_char, a, e, f, n, r, t
+	$else
+	    return $c
+
+    $sub literal_char($c)
+	$if !defined $c
+	    return "'\\0'"
+	$map unesc_char, a, e, f, n, r, t, '
+	$elif $c eq "\""
+	    return "'\\\"'"
+	$elif $c eq "\\"
+	    return "'\\\\'"
+	$else
+	    return "'$c'"
+
     $sub parse_regex($re, $name)
 	my @dst;
 
@@ -26,6 +51,7 @@ subcode:: _autoload
 	$call parse_regex_match_name
 
 	#print join("-", @dst), "\n";
+	push @dst, "label:$name - $re"
 	return \@dst;
 
     $sub parse_regex_keyword($re, $name)
@@ -35,10 +61,8 @@ subcode:: _autoload
 	$for $i=0:length($re)
 	    my $c=substr($re, $i, 1);
 	    $if $escape
-		$if $c=~/[tnr']/
-		    push @dst, "\\$c"
-		$elif $c eq '\\'
-		    push @dst, "\\\\"
+		$if $c=~/[0aefnrt]/
+		    push @dst, esc_char($c)
 		$else
 		    push @dst, $c
 		$natom++
@@ -50,6 +74,7 @@ subcode:: _autoload
 		$natom++
 	$call parse_regex_concat_previous_atoms
 	$call parse_regex_match_name
+	push @dst, "label:$name - '$re'"
 	return \@dst
 
 subcode: parse_regex_match_name
@@ -57,94 +82,155 @@ subcode: parse_regex_match_name
 	push @dst, "Match-$name"
 	push @dst, "]."
 
+# -------------------------------------------
 subcode: parse_regex_normal
+    my $flag_normal_char=1
     $if $escape
 	$call parse_regex_escape
 	$escape=0;
-
-    $if $c eq "\\"
-	$escape=1;
-    $elsif $c eq '['
-	$call parse_regex_concat_previous_atoms
-	@class=();
-	$inclass=1;
-    $elsif $c eq '('
-	$call parse_regex_concat_previous_atoms
-	push @paren_stack, {nalt=>$nalt, natom=>$natom};
-	$natom=0;
-	$nalt=0;
-    $elsif $c eq ')'
-	$if !$natom
-	    die "REGEX $re: Empty parenthesis\n";
-	$call parse_regex_concat_previous_atoms
-	$call parse_regex_concat_previous_alts
-	my $p=pop @paren_stack;
-	$if !$p
-	    die "REGEX $re: Unmatched parenthesis\n";
-	$natom=$p->{natom};
-	$nalt=$p->{nalt};
-	$natom++;
-    $elsif $c eq '|'
-	$if !$natom
-	    die "REGEX $re: Empty alternations\n";
-	$call parse_regex_concat_previous_atoms
-	$natom=0;
-	$nalt++;
-    $elsif $c eq '*' or $c eq '+' or $c eq '?'
-	$if !$natom
-	    die "REGEX $re: Empty '$c'\n";
-	$if $dst[-1] =~/\][\*\+\?]/
-	    # non-greedy
-	    $dst[-1].='?'
-	$else
-	    push @dst, "]$c";
     $else
+	$flag_normal_char=0
+	$if $c eq "\\"
+	    $escape=1;
+	$elsif $c eq '['
+	    $call parse_regex_concat_previous_atoms
+	    @class=();
+	    $inclass=1;
+	$elsif $c eq '('
+	    $call parse_regex_concat_previous_atoms
+	    push @paren_stack, {nalt=>$nalt, natom=>$natom};
+	    $natom=0;
+	    $nalt=0;
+	$elsif $c eq ')'
+	    $if !$natom
+		die "REGEX $re: Empty parenthesis\n";
+	    $call parse_regex_concat_previous_atoms
+	    $call parse_regex_concat_previous_alts
+	    my $p=pop @paren_stack;
+	    $if !$p
+		die "REGEX $re: Unmatched parenthesis\n";
+	    $natom=$p->{natom};
+	    $nalt=$p->{nalt};
+	    $natom++;
+	$elsif $c eq '|'
+	    $if !$natom
+		die "REGEX $re: Empty alternations\n";
+	    $call parse_regex_concat_previous_atoms
+	    $natom=0;
+	    $nalt++;
+	$elsif $c eq '*' or $c eq '+' or $c eq '?'
+	    $if !$natom
+		die "REGEX $re: Empty '$c'\n";
+	    $if substr($re, $i+1, 1) eq "?"
+		# non-greedy
+		$c.='?'
+		$i++
+	    push @dst, "]$c";
+	$elif $c eq '.'
+	    $c="AnyChar"
+	    $flag_normal_char=1
+	$else
+	    $flag_normal_char=1
+
+    $if $flag_normal_char
 	$call parse_regex_concat_previous_atoms
-	$if $c=~/](.+)/
-	    $c=$1;
-	$elsif $c eq '.'
-	    $c = "AnyChar";
-	$elsif $c eq '"'
-	    $c="\\\""
 	push @dst, $c;
 	$natom++
 
+# ---- Regex [...] ---
 subcode: parse_regex_inclass
-    my $c2=substr($re, $i+2, 1);
-    $if substr($re, $i+1, 1) eq "-"
-	push @class, "-$c$c2";
-	$i+=2;
-    $elsif $escape
-	$if $c =~/[tnr']/
-	    push @class, "\\$c";
-	$elsif $c eq '\\'
-	    push @class, "\\\\";
+    $if $escape
+	$if $c=~/[0aefnrt]/
+	    push @class, esc_char($c)
 	$else
 	    push @class, $c;
 	$escape=0;
-    $elsif $c eq "\\"
+    $elif $c eq "\\"
 	$escape=1;
-    $elsif $c eq ']'
-	foreach my $t (@class){
-	    push @dst, $t;
-	}
-	for(my $i=0; $i<@class-1; $i++){
-	    push @dst, "]|";
-	}
+    $elif $c eq ']'
+	$call process_regex_class
 	$natom++
 	$inclass=0;
+    $elif $c eq '-' and @class>1
+	my $c1=pop @class
+	my $c2=substr($re, $i+1, 1);
+	push @class, "$c1-$c2";
+	$i+=1
     $else
 	push @class, $c;
 
+    $if $inclass
+	$if @class>=3 and $class[-2] eq "-"
+	    my $c2=pop @class
+	    pop @class
+	    my $c1=pop @class
+	    push @class, "$c1-$c2"
+
+# ---
+subcode: process_regex_class
+    my $cnt=0
+    $if $class[0] eq "^" and @class>1
+	$call process_class_negate
+    $else
+	$call process_class_regular
+    $for $i=0:$cnt-1
+	push @dst, "]|"
+
+subcode: process_class_regular
+    my @tlist=sort {$a cmp $b} @class
+    my $last_c
+    # print "process_class_regular: ", join(", ", @tlist), "\n"
+    $foreach $c in @tlist
+	$if !$last_c or $c gt $last_c
+	    $if $c=~/(.+)-(.+)/
+		push @dst, "Range-$1-$2"
+		$cnt++
+		$last_c=$2
+	    $else
+		push @dst, $c
+		$cnt++
+		$last_c=$c
+
+subcode: process_class_negate
+    $if @class==2
+	push @dst, "NotChar-$class[1]"
+	$cnt++
+    $else
+	shift @class
+	my @tlist=sort {$a cmp $b} @class
+	my $last_c
+	$foreach $c in @tlist
+	    $if !$last_c
+		$if $c=~/(.+)-(.+)/
+		    push @dst, "LtChar-$1"
+		    $cnt++
+		    $last_c=$2
+		$else
+		    push @dst, "LtChar-$c"
+		    $cnt++
+		    $last_c=$c
+	    $elif $c gt $last_c
+		my $c1=chr(ord($last_c)+1)
+		my $c2=chr(ord($c)-1)
+		$if $c1 lt $c2
+		    push @dst, "Range-$c1-$c2"
+		    $cnt++
+		$elif $c1 eq $c2
+		    push @dst, "$c1"
+		    $cnt++
+		$if $c=~/(.+)-(.+)/
+		    $last_c=$2
+		$else
+		    $last_c=$c
+	push @dst, "GtChar-$last_c"
+	$cnt++
+
+# ----
 subcode: parse_regex_escape
-    $if $c=~/[tnr']/
-	$c="\\$c";
+    $if $c=~/[0aefnrt]/
+	$c=esc_char($c)
     $elif $c=~/[sSdDwW]/
-	$c="class-$c";
-    $elif $c =~/[()*+?|.\]\[]/
-	$c="]$c";
-    $elif $c eq '\\'
-	$c="]\\\\";
+	$c="Class-$c";
 
 subcode: parse_regex_concat_previous_atoms
     $if $natom>1

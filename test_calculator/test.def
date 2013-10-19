@@ -20,6 +20,7 @@ subcode: test_input
 
 subcode: test_lex
     $while 1
+	$call input_start, prog_input
 	n_token=regex_vm_match(prog_vm, prog_input)
 	$if n_token==EOF
 	    break

@@ -1,0 +1,57 @@
+include: macro_regex/load_grammar.def
+include: macro_regex/parse_rule.def
+include: macro_regex/print_rule.def
+
+include: macro_regex/write_rule.def
+
+subcode: make_parser
+    my ($grammarfile, $outfile)=@ARGV
+    $if !-f $grammarfile or !$outfile
+	die "Usage: $0 grammar_file output_def_file\n"
+
+    $if -d $outfile
+	$outfile="$outfile/parser.def"
+    $elif $outfile !~ /\.def$/
+	die "Usage: $0 grammar_file output_dir|output_def_file\n"
+
+    $call load_grammar, $grammarfile
+    $call filter_grammar
+
+    # $call print_grammar
+    $call @prepare_parser
+
+    &call open_w, $outfile
+	$call write_parser
+	$call dump_out
+
+    $call @support_subs
+
+# ==== Output Routines ===========================
+subcode:: _autoload
+    $global @out_stack
+    $global $out=[]
+    $global $indent=0
+
+subcode: dump_out
+    $foreach $l in @$out
+	print Out $l
+    $out=[]
+
+subcode: do_print(@str)
+    push @$out, "    "x$indent, $(str), "\n"
+
+subcode: do_print_ln
+    push @$out, "\n"
+
+# -------------------------------
+subcode: push_out
+    push @out_stack, $out
+    $out=[]
+
+subcode: pop_out
+    my $temp_out=$out
+    $out=pop @out_stack
+    BLOCK
+    push @$out, @$temp_out
+    
+

@@ -22,11 +22,18 @@ subcode:: _autoload
 		$call nfa_star
 	    $elsif $c eq "]+" || $c eq "]+?"
 		$call nfa_plus
+	    $elif $c =~/label:(.*)/
+		$if @fragstack
+		    $fragstack[-1]->{in}->{label}=$1
 	    $else
 		$call nfa_char
 	my $e=pop @fragstack;
 	$if @fragstack
-	    die "Unbalanced fragstack\n"
+	    print "Unbalanced fragstack: "
+	    $foreach $e in @fragstack
+		print $e->{in}->{c}, ", "
+	    print "\n"
+	    die
 	# $call nfa_frag_connect, $e, $match
 	return $e->{in}
 

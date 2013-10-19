@@ -3,7 +3,7 @@
 subcode:: _autoload
     $sub get_first($rule)
 	$global %first_set_hash
-	$global %empty_set_hash
+	$(set:first_set_hash=1)
 	$if !$rule
 	    return undef
 	$elif $first_set_hash{$rule}
@@ -13,27 +13,65 @@ subcode:: _autoload
 	$if $type =~/^(term|keyword)/
 	    return [$rule->{value}]
 	$elif $type =~ /\*|\?/
-	    $empty_set_hash{$rule}=1
+	    my $set=get_first($rule->{value})
+	    $if $set->[0] ne "EMPTY"
+		my @tset=("EMPTY")
+		push @tset, @$set
+		return \@tset
+	    $else
+		return  $set
+	$elif $type eq "+"
 	    return get_first($rule->{value})
 	$elif $type eq "group"
 	    my $tlist=$rule->{value}
-	    $call get_first_group, $tlist
+	    $call get_first_group, $tlist, 0
 	$elif $type eq "alt"
 	    my $tlist=$rule->{value}
 	    $call get_first_alt, $tlist
 	$elif $type eq "nonterm"
-	    my $tlist=$rules{$rule->{value}}
-	    $if !$tlist
-		die "Missing rule definition for $rule->{value}\n"
-	    $call get_first_alt, $tlist
+	    $if $FIRST{$rule->{value}}
+		return [$FIRST{$rule->{value}}]
+	    $else
+		my $tlist=$rules{$rule->{value}}
+		$if !$tlist
+		    die "Missing rule definition for $rule->{value}\n"
+		$call get_first_alt, $tlist
 	$else
 	    die "get_first: unknow type: $type\n"
 
+    $sub get_first_sublist($list, $i)
+	$(set:first_set_hash=0)
+	$call get_first_group, $list, $i
+
+
+# -
+subcode: get_first_group(list, start)
+    &call get_first_block
+	$for $i=$(start):@$(list)
+	    my $set=get_first($(list)->[$i])
+	    $call get_first_push, $set
+	    $if $set->[0] ne "EMPTY"
+		$if $first_set[0] eq "EMPTY"
+		    shift @first_set
+		last
+
+# -
+subcode: get_first_alt(list)
+    &call get_first_block
+	$foreach $r in @$(list)
+	    my $set=get_first($r)
+	    $if $set->[0] eq "EMPTY" and !$first_hash{"EMPTY"}
+		unshift @first_set, "EMPTY"
+		$first_hash{"EMPTY"}=1
+	    $call get_first_push, $set
+
+# --
 subcode: get_first_block
     my @first_set
     my %first_hash
     BLOCK
-    $first_set_hash{$rule}=\@first_set
+    $(if:first_set_hash=1)
+	$first_set_hash{$rule}=\@first_set
     return \@first_set
 
 subcode: get_first_push(set)
@@ -42,24 +80,4 @@ subcode: get_first_push(set)
 	    push @first_set, $t
 	    $first_hash{$t}=1
 
-# -
-subcode: get_first_group(list)
-    &call get_first_block
-	$empty_set_hash{$rule}=1
-	$for $i=0:@$(list)
-	    my $set=get_first($(list)->[$i])
-	    $call get_first_push, $set
-	    $if ! $empty_set_hash{$(list)->[$i]}
-		$empty_set_hash{$rule}=0
-		last
-
-# -
-subcode: get_first_alt(list)
-    &call get_first_block
-	$foreach $r in @$(list)
-	    $if $empty_set_hash{$r}
-		$empty_set_hash{$rule}=1
-	    my $set=get_first($r)
-	    $call get_first_push, $set
-
-# --
+# ---------------------------------------------------

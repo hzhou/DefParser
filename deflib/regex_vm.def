@@ -4,7 +4,7 @@ include: input_buffer.def
 # Regular Expression Matching: the Virtual Machine Approach
 # http://swtch.com/~rsc/regexp/regexp2.html
 subcode:: _autoload
-    $enum Match, Char, Split, Jmp, AnyChar, Range, Class
+    $enum Match, Char, Split, Jmp, AnyChar, Range, NotChar, LtChar, GtChar, Class
     $struct(VMInst) int opcode, int c, int x, int y
     # VM thread list
     #     state, label, state, label, ...
@@ -51,12 +51,12 @@ subcode: add_vm_thread(list, thread)
 	tn_$(list)++
 
 # ----
-subcode: input_start
-    b->n_start=b->n_pos
-subcode: input_fetch_c
-    c=input_get_char(b)
-subcode: input_back_pos(len)
-    b->n_pos=b->n_start+$(len)
+subcode: input_start(b)
+    $(b)->n_start=$(b)->n_pos
+subcode: input_fetch_c(b)
+    c=input_get_char($(b))
+subcode: input_back_pos(b, len)
+    $(b)->n_pos=$(b)->n_start+$(len)
 
 fncode: regex_vm_match(struct regex_vm * vm, struct input_buffer * b)
     $return_type int
@@ -66,20 +66,22 @@ fncode: regex_vm_match(struct regex_vm * vm, struct input_buffer * b)
     nlist=vm->pn_nlist
     nfa=vm->nfa
 
-    $call input_start
-
     n_last_match_len=0
     n_last_match_id=0
 
     $call init_vm_thread_list
     $while tn_clist>0
 	$call regex_vm_match_prescan
-	$call input_fetch_c
+	$call input_fetch_c, b
 	$if c==EOF
 	    $if n_last_match_len>0
 		goto return_match
 	    $else
 		return EOF
+	$elif c=='\n' 
+	    $global int prog_line=0
+	    prog_line++
+
 	# -- Lock-Step running of all threads --
 	$for i=0:tn_clist:2
 	    $local struct VMInst* pInst
@@ -90,7 +92,7 @@ fncode: regex_vm_match(struct regex_vm * vm, struct input_buffer * b)
 	$call swap_vm_thread_list
     return_match:
     $if n_last_match_len>0
-	$call input_back_pos, n_last_match_len
+	$call input_back_pos, b, n_last_match_len
     return n_last_match_id
 
 subcode: regex_vm_match_prescan
@@ -128,6 +130,15 @@ subcode: regex_vm_opcode
     $else
 	$if pInst->opcode==Char
 	    $if c != pInst->c
+		continue
+	$elif pInst->opcode==NotChar
+	    $if c == pInst->c
+		continue
+	$elif pInst->opcode==LtChar
+	    $if c >= pInst->c
+		continue
+	$elif pInst->opcode==GtChar
+	    $if c <= pInst->c
 		continue
 	$elif pInst->opcode==Range
 	    $if c<pInst->x || c>pInst->y

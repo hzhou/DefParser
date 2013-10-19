@@ -1,0 +1,72 @@
+include: parser_c.def
+include: parser.def
+
+page: test, basic_frame
+    subcode: main
+	file_in=fopen(argv[1], "r")
+	$if file_in
+	    prog_input=input_create(file_in, 1024)
+	    prog_vm=regex_vm_init(lex, lex_SIZE)
+
+	    $call test_parser
+	    # $call test_lex
+	    regex_vm_finish(prog_vm)
+	$else
+	    print Error opening file
+
+subcode: test_lex
+    $while 1
+	$call input_start, prog_input
+	n_token=regex_vm_match(prog_vm, prog_input)
+	$if n_token==EOF
+	    break
+	$elif n_token!=T_SKIP
+	    s_token=input_get_str(prog_input)
+	    printf "got token: "
+	    $call print_lex_name, n_token
+	    print \t[$s_token]
+
+subcode: test_parser
+    parse_prog()
+    $call print_stack
+
+# --------------------------
+subcode: print_token_process
+    $case p->id==G_stmt_compound
+	$call use_group, $(v)->list[1], v2
+	$for i=0:$(v2)->n
+	    print_ast($(v2)->list[i], n_indent)
+	return
+    &call dump_token, declaration_2
+	$map dump, 0, " ", 1
+    &call dump_token, stmt_exp
+	$call dump, 0
+    &call dump_token, stmt_while
+	$map dump, "$while ", 2, "\n"
+	print_ast($(v)->list[4], n_indent+1)
+    &call dump_token, default_function_definition_2
+	$map dump, "fncode: ", 0
+	$call use_group, $(v)->list[2], v2
+	$if !($(v2)->id==G_group && $(v2)->n==0)
+	    $map dump, 1, 2, 3
+	$map dump, "\n"
+	print_ast($(v)->list[4], n_indent+1)
+
+# ----
+subcode: dump_token(name)
+    $case p->id==G_$(name)
+	$call print_ast_indent, n_indent
+	BLOCK
+	printf "\n"
+	return
+
+subcode: dump(name)
+    $(if:number:name)
+	dump_ast($(v)->list[$(name)])
+    $(else)
+	printf $(name)
+
+# ----
+subcode: use_group(p, var)
+    $call get_ast_group, $(p)
+    $(export:$(var)=$(v))

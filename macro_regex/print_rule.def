@@ -1,8 +1,8 @@
 subcode: _autoload
-    $sub filter_rule($name, $rule, $nonterm_list)
+    $sub filter_rule($name, $rule)
 	my $type=$rule->{type}
 	$if $type eq "nonterm"
-	    push @$nonterm_list, $rule->{value}
+	    push @topdown_list, $rule->{value}
 	$elif $type eq "RECURSE"
 	    die "error RECURSE\n"
 	$elif $type eq "right"
@@ -14,35 +14,36 @@ subcode: _autoload
 		    $t->{type}="nonterm"
 		    $t->{value}=$name
 		$else
-		    filter_rule($name, $t, $nonterm_list)
-	$elif $type =~ /[*?]/
-	    filter_rule($name, $rule->{value}, $nonterm_list)
+		    filter_rule($name, $t)
+	$elif $type =~ /[*?+]/
+	    filter_rule($name, $rule->{value})
 
-    $sub print_rule($rule, $nonterm_list)
+    $sub print_rule($rule)
 	$if ref($rule) eq "SCALAR"
-	    print $rule, " "
+	    return $rule
 	$elif ref($rule) eq "HASH"
 	    my $type=$rule->{type}
 	    $if $type =~ /^(term|nonterm|keyword)/
-		$if defined $nonterm_list and $type eq "nonterm"
-		    push @$nonterm_list, $rule->{value}
+		$if $type eq "nonterm"
+		    push @topdown_list, $rule->{value}
 		$type=uc($type)
-		print "($type: $rule->{value}) "
+		return "[$type: $rule->{value}]"
 	    $elif $type =~ /group|alt/
-		$type=uc($type)
-		print "($type: "
 		my $tlist=$rule->{value}
+		my @plist
 		$foreach $t in @$tlist
-		    print_rule($t, $nonterm_list)
-		print ") "
-	    $elif $type =~ /[*?]/
-		print "($type: "
-		print_rule($rule->{value}, $nonterm_list)
-		print ") "
+		    push @plist, print_rule($t)
+		$if $type eq "group"
+		    return "(".join(' ', @plist).")"
+		$else
+		    return "(".join(' | ', @plist).")"
+	    $elif $type =~ /[*?+]/
+		my $t=print_rule($rule->{value})
+		return "$t$type"
 	    $else
-		print "($type) "
+		return "[$type]"
 	$else
-	    print $rule
+	    return "[$rule]"
 
 # -------------------------------
 subcode: print_grammar
@@ -50,9 +51,7 @@ subcode: print_grammar
 	my $rulelist=$rules{$name}
 	print "$name:\n"
 	$foreach $r in @$rulelist
-	    print "    "
-	    print_rule($r, \@name_list)
-	    print "\n"
+	    print "    ", print_rule($r), "\n"
 	print "\n"  
 
 # -------------------------------
@@ -60,5 +59,5 @@ subcode: filter_grammar
     &call topdown_loop, name, $top_symbol
 	my $rulelist=$rules{$name}
 	$foreach $r in @$rulelist
-	    filter_rule($name, $r, \@name_list)
+	    filter_rule($name, $r)
 

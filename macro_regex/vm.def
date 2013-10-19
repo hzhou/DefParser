@@ -6,7 +6,6 @@ subcode:: _autoload
 	push @threadstack, $startstate;
 
 	my @vm;
-	my $count;
 	my %address;
 	$while my $state=pop @threadstack
 	    $if defined $address{$state}
@@ -16,11 +15,15 @@ subcode:: _autoload
 		    push @vm, ["Jmp", 0, $state, 0];
 		    last;
 		$else
+		    my $label=$state->{label}
 		    $address{$state}=$#vm+1;
 		    $call state_to_vm
-		    $count++;
-		    $if $count>1000
+		    $if $label
+			$vm[-1]->[4]=$label
+		    $if @vm>1000
 			die "VM too long\n"
+		    $if $flag_last
+			last
 	# -- patch labels
 	$foreach my $l  in @vm
 	    $if $l->[0] eq "Jmp"
@@ -31,9 +34,10 @@ subcode:: _autoload
 	return \@vm;
 
 subcode: state_to_vm
+    my $flag_last
     $if $state->{c} =~/Match-(.*)/
 	push @vm,  ["Match", $1, 0, 0];
-	last;
+	$flag_last=1
     $elsif $state->{c} eq "Split"
 	$if $state->{nongreedy}
 	    push @vm, ["Split", 1, $state->{out2}, $state->{out1}];
@@ -41,30 +45,52 @@ subcode: state_to_vm
 	    push @vm, ["Split", 0, $state->{out1}, $state->{out2}];
 	push @threadstack, $state->{out1};
 	push @threadstack, $state->{out2};
-	last;
+	$flag_last=1
     $elsif $state->{c} eq "AnyChar"
 	push @vm,  ["AnyChar", 0, 0, 0];
 	$state=$state->{out1};
-    $elsif $state->{c} =~/^-(.)(.)/
-	push @vm,  ["Range", 0, "'$1'", "'$2'"];
+    $elsif $state->{c} =~/^Range-(.+)-(.+)/
+	push @vm,  ["Range", 0, $1, $2];
 	$state=$state->{out1};
-    $elsif $state->{c} =~/class-(.)/
-	push @vm,  ["Class", "'$1'", 0, 0];
+    $elsif $state->{c} =~/^NotChar-(.+)/
+	push @vm,  ["NotChar", $1, 0, 0];
+	$state=$state->{out1};
+    $elsif $state->{c} =~/^LtChar-(.+)/
+	push @vm,  ["LtChar", $1, 0, 0];
+	$state=$state->{out1};
+    $elsif $state->{c} =~/^GtChar-(.+)/
+	push @vm,  ["GtChar", $1, 0, 0];
+	$state=$state->{out1};
+    $elsif $state->{c} =~/Class-(.)/
+	push @vm,  ["Class", $1, 0, 0];
 	$state=$state->{out1};
     $else
-	push @vm,  ["Char", "'$state->{c}'", 0, 0];
+	my $c=$state->{c}
+	push @vm,  ["Char", $c, 0, 0];
 	$state=$state->{out1};
 
 # --------
 subcode: print_vm_c(var)
     $call vm_hash_labels, $vm
     my $n=@$vm;
+    $call do_print, "\$define($(var)_SIZE) $n"
     $call do_print, "struct VMInst $(var)[$n]= {"
     my $addr=0
     $foreach $l in @$vm
-	my $t=join(", ", @$l)
+	$if $l->[0] =~/^(Char|NotChar|LtChar|GtChar|Class)/
+	    $l->[1]=literal_char($l->[1])
+	$elif $l->[0] eq "Range"
+	    $l->[2]=literal_char($l->[2])
+	    $l->[3]=literal_char($l->[3])
+	my $label
 	$if $labelhash{$addr}
-	    $call do_print, "    /* $addr */"
+	    $label=$addr
+	$if $l->[4]
+	    $label.=" - ".pop(@$l)
+	$if $label
+	    $label="#"." ".$label
+	    $call do_print, "    $label"
+	my $t=join(", ", @$l)
 	$call do_print, "    $t,"
 	$addr++
     $call do_print, "};"

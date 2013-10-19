@@ -5,7 +5,7 @@ subcode:: _autoload
     $struct(input_buffer) n_pos, n_tempchar, b_eof, b_tty
 
     $list input_create, input_delete
-    $list input_get_char, input_get_str, input_dup_str
+    $list input_get_char, input_get_str
 
 fncode: input_create(FILE * f, n_buf_size)
     $local struct input_buffer * b
@@ -34,13 +34,5 @@ fncode: input_get_str(struct input_buffer * b)
     b->n_tempchar=b->buffer[b->n_pos]
     b->buffer[b->n_pos]='\0'
     return b->buffer+b->n_start
-
-fncode: input_dup_str(struct input_buffer * b)
-    tn_len=b->n_pos-b->n_start
-    $local s
-    $allocate(tn_len+1) s
-    memcpy(s, b->buffer+b->n_start, tn_len)
-    s[tn_len]='\0'
-    return s
 
 # -----------

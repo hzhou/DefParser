@@ -1,0 +1,114 @@
+include: macro_regex/make_parser.def
+
+page: make_parser_perl, make_parser
+    type: pl
+    subcode: write_parser
+	$call do_print, "subcode:: _autoload"
+	$indent=1
+	$call write_lexer_perl
+	$call do_print_ln
+	$call parse_grammar
+
+# ==============================================
+subcode: write_lexer_perl
+    $call do_print, "\$sub fetch_token"
+    $indent++
+
+    my @tlist
+    $foreach $name in @lex_keywords
+	push @tlist, $lex_keyword_rules{$name}
+    my @sorted_list=sort { length($b) <=> length($a) } @tlist
+
+    my @keyword_words
+    my @keyword_symbols
+    $foreach $t in @sorted_list
+	$if $t=~/\w$/
+	    push @keyword_words, $t
+	$else
+	    $t=~s/([.^$\[\](){}|+*?\\\/])/\\\1/g
+	    push @keyword_symbols, $t
+
+    $call write_lexer_perl_prepare_hash
+
+    $call do_print, "again:"
+
+    my $t=join("|", @keyword_words)
+    $call do_print, "\$if \$prog_input=~/\\G($t)\\b/gcs"
+    $call do_print, "    return ['KEYWORD', \$1]"
+
+    $foreach $name in @lex_tokens
+	my $pat=$lex_token_rules{$name}
+	$pat=~s/\//\\\//g
+	$call do_print, "\$if \$prog_input=~/\\G($pat)/gcs"
+	$indent++
+	$call write_lexer_perl_lex_action
+	$call write_lexer_perl_skip_or_return
+	$indent--
+
+    my $t=join("|", @keyword_symbols)
+    $call do_print, "\$if \$prog_input=~/\\G($t)/gcs"
+    $call do_print, "    return ['KEYWORD', \$1]"
+
+    $call do_print, "return undef"
+
+subcode: write_lexer_perl_prepare_hash
+    my %skip_hash
+    $foreach $name in @skip_list
+	$skip_hash{$name}=1
+    my %lex_action_hash
+    $foreach $name in @lex_action_list
+	$lex_action_hash{$name}=1
+
+subcode: write_lexer_perl_lex_action
+    $if $lex_action_hash{$name}
+	$call do_print, "\$(if:hascode:on_lex_$name)"
+	$call do_print, "    \$call on_lex_$name"
+
+subcode: write_lexer_perl_skip_or_return
+    $if $skip_hash{$name}
+	$call do_print, "goto again"
+    $else
+	$call do_print, "return ['$name', \$1]"
+
+# ===============================================
+subcode: parse_function_start
+    $indent=0
+    $call do_print, "subcode:: _autoload"
+    $indent++
+    $call do_print, "\$sub parse_$name"
+
+subcode: do_rule_token_group
+    $call do_print, "\$call push_token_group"
+    BLOCK
+    $call do_print, "\$call pop_token_group"
+
+# ===============================================
+subcode: lookahead_fromset
+    my $LA="\$token_stack[0]"
+    $if $base_depth>1
+	my $idx=$base_depth-1
+	$LA="\$token_stack[$idx]"
+    my $LA0=$LA."->[0]"
+    my $LA1=$LA."->[1]"
+
+    my @set_key
+    my @set_token
+    my @set_custom
+    $foreach $t in @$set
+	$if $lex_keyword_rules{$t}
+	    my $p=$lex_keyword_rules{$t}
+	    $p=~s/([.^$\[\](){}|+*?\\\/])/\\\1/g
+	    push @set_key, $p
+	$elif $lex_token_rules{$t}
+	    push @set_token, $t
+	$elif $t=~/^CUSTOM:(.*)/
+	    push @set_custom, $1
+
+    $if @set_key
+	push @partlist, "$LA0 eq \"KEYWORD\" && $LA1=~/^(".join("|", @set_key).")\$/"
+    $if @set_token
+	push @partlist, "$LA0=~/^(".join("|", @set_token).")\$/"
+    $foreach $t in @set_custom
+	$call get_look_ahead_custom, $t
+	push @partlist, $lookahead_custom
+

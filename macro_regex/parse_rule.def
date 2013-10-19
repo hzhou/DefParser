@@ -79,8 +79,6 @@ subcode: concat_atom
 
 subcode: concat_alt
     $if $n_alt>0
-	$if $n_atom!=1
-	    die "concat_alt: n_atom != 1.\n"
 	$n_alt++
 	my @atoms=splice(@char_stack, @char_stack-$n_alt, $n_alt)
 	push @char_stack, {type=>"alt", value=>\@atoms}
@@ -104,18 +102,20 @@ subcode: parse_special
 	$call concat_atom
 	$n_atom=0
 	$n_alt++
-    $elif $c eq '*' or $c eq '?'
+    $elif $c eq '*' or $c eq '?' or $c eq '+'
 	my $p=pop @char_stack
 	push @char_stack, {type=>$c, value=>$p, name=>$rulename}
+
+subcode: old_parse_plus
     $elif $c eq '+'
 	my $p=$char_stack[-1]
 	push @char_stack, {type=>"*", value=>$p, name=>$rulename}
+	$n_atom++
 
 # -------------------------------------------
 subcode: check_parse_end
     $if @char_stack!=1
-	print "Something went wrong [$str]:\n"
+	print "Unbalanced rule parsing stack: $rulename [$str]\n"
 	$foreach $r in @char_stack
-	    print_rule($r)
-	print "\n"
+	    print "    ", print_rule($r), "\n"
 	die
