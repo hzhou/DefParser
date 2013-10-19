@@ -1,0 +1,7 @@
+%grammar csv
+csv: value (',' value)*
+value: (Word|SingleString|DoubleString)* 
+
+Word: [^,]*
+SingleString: '([^']|\\')*'
+DoubleString: "([^"]|\\")*"
