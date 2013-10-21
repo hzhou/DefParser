@@ -1,7 +1,12 @@
 %grammar csv
 
-csv: value (',' value)*
+csv: value (Delimiter value)*
 value: (Word|DoubleString)? 
 
-Word: [^"][^,]*
+Word: [^" ,][^,]*
 DoubleString: "([^"]|\\")*"
+
+Delimiter: ,
+
+%skip SKIP
+SKIP: [ \t]+

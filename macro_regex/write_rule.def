@@ -96,12 +96,9 @@ subcode:: _autoload
 		$if $first_set->[0] eq "EMPTY" or $tlist->[$i]->{type} eq '+'
 		    my $second_set=get_first_sublist($tlist, $i+1)
 		    $call check_group_ambiguity, $first_set, $second_set
-		    $if $i<$#$tlist
-			&call do_rule_token_group
-			    $call do_rule_optional, $tlist->[$i]
-			    $call do_print, "\$call on_parse_finish, group"
-		    $else
+		    &call do_rule_token_group
 			$call do_rule_optional, $tlist->[$i]
+			$call do_print, "\$call on_parse_finish, group"
 		$else
 		    $tlist->[$i]->{name}=$name
 		    do_rule($tlist->[$i], $indent)

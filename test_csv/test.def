@@ -4,8 +4,35 @@ page: test
     type: pl
     subcode: main
 	$call @support_subs
-	my @tlist=get_csv("1, 2, Hui, Harry, \"Zhang, Xiaoyi\"")
+	my @tlist=get_csv("1, 2, , Hui, Harry, \"Zhang, Xiaoyi\"")
 	my $i=1
 	$foreach $t in @tlist
 	    print "$i: $t\n"
 	    $i++
+
+subcode:: support_subs
+    $sub get_csv($str)
+	$prog_input=$str
+	$call parse_init
+	parse_csv()
+
+subcode: on_csv
+    return @parse_stack
+
+subcode: on_Word
+    push @parse_stack, $token->[1]
+    $cur_token_count++
+
+subcode: on_DoubleString
+    $if $token->[1]=~/"(.*)"/
+	push @parse_stack, $1
+    $else
+	push @parse_stack, $token->[1]
+    $cur_token_count++
+
+subcode: on_Delimiter
+
+subcode: on_group
+    $if $cur_token_count==0
+	push @parse_stack, ""
+	$cur_token_count++

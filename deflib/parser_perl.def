@@ -1,10 +1,13 @@
 subcode:: _autoload
+    $global $prog_input
     $global @token_stack
-
     $global @parse_stack
-
     $global @parse_context
     $global $cur_token_count=0
+
+subcode: parse_init
+    @parse_stack=()
+    $cur_token_count=0
 
 subcode: push_token_group
     push @parse_context, $cur_token_count
@@ -25,22 +28,24 @@ subcode: match_error
 subcode: match_keyword(name)
     $call look_ahead, 1
     $if $token_stack[0]->[0] eq "KEYWORD"
-	push @parse_stack, shift @token_stack
-	$cur_token_count++
+	$call grab_token, $(name)
     $else
 	$call match_error
 
 subcode: match_term(name)
     $call look_ahead, 1
     $if $token_stack[0]->[0] eq "$(name)"
-	$(if:hascode:on_$(name))
-	    my $token=shift @token_stack
-	    $call on_$(name)
-	$(else)
-	    push @parse_stack, shift @token_stack
-	    $cur_token_count++
+	$call grab_token, $(name)
     $else
 	$call match_error
+
+subcode: grab_token(name)
+    $(if:hascode:on_$(name))
+	my $token=shift @token_stack
+	$call on_$(name)
+    $(else)
+	push @parse_stack, shift @token_stack
+	$cur_token_count++
 
 subcode: on_parse_finish(name)
     $(if:hascode:on_$(name))

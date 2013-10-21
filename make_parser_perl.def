@@ -34,9 +34,10 @@ subcode: write_lexer_perl
 
     $call do_print, "again:"
 
-    my $t=join("|", @keyword_words)
-    $call do_print, "\$if \$prog_input=~/\\G($t)\\b/gcs"
-    $call do_print, "    return ['KEYWORD', \$1]"
+    $if @keyword_words
+	my $t=join("|", @keyword_words)
+	$call do_print, "\$if \$prog_input=~/\\G($t)\\b/gcs"
+	$call do_print, "    return ['KEYWORD', \$1]"
 
     $foreach $name in @lex_tokens
 	my $pat=$lex_token_rules{$name}
@@ -47,9 +48,10 @@ subcode: write_lexer_perl
 	$call write_lexer_perl_skip_or_return
 	$indent--
 
-    my $t=join("|", @keyword_symbols)
-    $call do_print, "\$if \$prog_input=~/\\G($t)/gcs"
-    $call do_print, "    return ['KEYWORD', \$1]"
+    $if @keyword_symbols
+	my $t=join("|", @keyword_symbols)
+	$call do_print, "\$if \$prog_input=~/\\G($t)/gcs"
+	$call do_print, "    return ['KEYWORD', \$1]"
 
     $call do_print, "return undef"
 

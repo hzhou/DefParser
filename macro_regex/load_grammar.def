@@ -73,7 +73,7 @@ subcode:: support_subs
 # -- Loading individual rule ---------------------
 subcode: push_rule
     $call push_rule_getname
-    $if $t=~/^\%(left|right|tripple)\s*(.*)/
+    $if $t=~/^\%(left|right|tripple|postfix|prefix)\s*(.*)/
 	my $temp_rule_name=$cur_rule_name."_$cur_rule_level"
 	$rules{$temp_rule_name}=$cur_rule
 
@@ -88,6 +88,10 @@ subcode: push_rule
 	$elif $1 eq "tripple"
 	    my ($op1, $op2)=split /,\s*/, $2
 	    $t="$temp_rule_name ($op1 RECURSE $op2 RECURSE)?"
+	$elif $1 eq "postfix"
+	    $t="$temp_rule_name $2*"
+	$elif $1 eq "prefix"
+	    $t="$temp_rule_name | $2 RECURSE"
 	$call push_rule_direct
     $else
 	$call push_rule_direct
