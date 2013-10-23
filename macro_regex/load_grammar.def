@@ -38,6 +38,8 @@ subcode: load_grammar(file)
 		replace_macro(\$t)
 		$call add_regex, $name, $t
 	    $else
+		$if !$top_symbol
+		    $top_symbol=$name
 		$cur_rule_name=$name
 		$cur_rule_index=0
 		$cur_rule_level=0

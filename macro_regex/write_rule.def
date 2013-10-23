@@ -4,6 +4,7 @@ subcode:: _autoload
     $global $flag_debug
 
 subcode: parse_grammar
+    print "parse_grammar: top_symbol=$top_symbol\n"
     my @fnlist
     &call topdown_loop, name, $top_symbol
 	$call init_debug
