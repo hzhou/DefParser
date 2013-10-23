@@ -5,8 +5,11 @@ subcode:: _autoload
     $global @parse_context
     $global $cur_token_count=0
 
-subcode: parse_init
+subcode: parse_init(str)
+    $prog_input=$(str)
+    @token_stack=()
     @parse_stack=()
+    @parse_context=()
     $cur_token_count=0
 
 subcode: push_token_group
@@ -14,8 +17,10 @@ subcode: push_token_group
     $cur_token_count=0
 
 subcode: pop_token_group
+    my $group_token_count=$cur_token_count
     $cur_token_count=pop @parse_context
-    $cur_token_count++
+    $if $group_token_count
+	$cur_token_count++
     
 subcode: look_ahead(n)
     $for $i=0:$(n)
@@ -51,15 +56,18 @@ subcode: on_parse_finish(name)
     $(if:hascode:on_$(name))
 	$call @on_$(name)
     $(else)
-	$if $cur_token_count==0
-	    push @parse_stack, ["$(name)", undef]
-	$elif $cur_token_count>1
+	$(if:!skip0)
+	    $if $cur_token_count==0
+		push @parse_stack, ["$(name)", undef]
+	$if $cur_token_count>1
 	    my @tlist=splice(@parse_stack, -$cur_token_count)
 	    push @parse_stack, ["$(name)", \@tlist]
 
 # =======================================================
-subcode: process_token(subname)
-    $sub $(subname)($token)
+subcode: debug_parse_stack
+    $for $i=0:@parse_stack
+	print "$i:"
+	print_token($parse_stack[$i])
 
 subcode:: _autoload
     $sub print_token($token, $indent)

@@ -12,9 +12,8 @@ page: test
 
 subcode:: support_subs
     $sub get_csv($str)
-	$prog_input=$str
-	$call parse_init
-	parse_csv()
+	$call parse_init, $str
+	return parse_csv()
 
 subcode: on_csv
     return @parse_stack

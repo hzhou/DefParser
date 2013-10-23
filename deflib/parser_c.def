@@ -26,10 +26,12 @@ fncode: push_token_group
     n_token_count=0
 
 fncode: pop_token_group
+    n_save_count=n_token_count
     $call da_pop, p_token_count
     n_token_count=$(item).count
     n_ast_type=$(item).ast_type
-    n_token_count++
+    $if n_save_count>0
+	n_token_count++
 
 # ----
 subcode: push_ast
@@ -183,8 +185,12 @@ subcode: on_parse_finish(name)
     $(if:hascode:on_$(name))
 	$call @on_$(name)
     $(else)
-	$if n_token_count!=1
-	    concat_ast_group(G_$(name))
+	$(if:skip0)
+	    $if n_token_count>1
+		concat_ast_group(G_$(name))
+	$(else)
+	    $if n_token_count!=1
+		concat_ast_group(G_$(name))
 
 # ---- Debug Routines ------------------------------------
 subcode: end_of_prog_check

@@ -22,7 +22,48 @@ subcode: init_debug
     $else
 	$flag_debug=0
 
-# --------------
+# ------------------------------------------------
+subcode:: _autoload
+    $sub do_rule($rule, $indent)
+	$call get_rule_name, $rule
+	my $error
+	my $type=$rule->{type}
+	$if !$name
+	    print "do_rule($type-noname): ", print_rule($rule), "\n"
+	$if $type eq "keyword"
+	    $call do_print, "\$call match_keyword, $rule->{value}"
+	$elif $type eq "term"
+	    $call do_print, "\$call match_term, $rule->{value}"
+	$elif $type eq "nonterm"
+	    $call do_print, "parse_$rule->{value}()"
+	    push @topdown_list, $rule->{value}
+	$elif $type eq "group"
+	    my $tlist=$rule->{value}
+	    $call do_rule_group
+	$elif $type eq "*" or $type eq "?" or $type eq "+"
+	    $call do_rule_optional, $rule
+	$elif $type eq "empty"
+	    print "Error: do_rule(empty)!\n"
+	    die
+	$elif $type eq "alt"
+	    my $rulelist=$rule->{value}
+	    my $i=1
+	    $foreach $r in @$rulelist
+		my $r_name=$name."_$i"
+		$r->{name}=$r_name
+		$call add_rule_name, $r_name
+		$i++
+	    $call do_rule_alt, $rulelist
+	$else
+	    $error="Rule type [$type] not recognized."
+
+	$if $error
+	    print "    "x$indent
+	    print "do_rule errro: $error\n"
+	    print "    "x$indent
+	    print "    in rule: ", print_rule($rule), "\n"
+
+# ----------------------------------------------------
 subcode: do_rule_alt(rulelist)
     &call do_rule_token_group
 	$if @$(rulelist)==1
@@ -58,6 +99,21 @@ subcode: do_rule_optional(r)
 	do_rule($r, $indent)
 	$indent--
 
+subcode: do_rule_group
+    $for $i=0:@$tlist
+	my $first_set=get_first($tlist->[$i])
+	$if $first_set->[0] eq "EMPTY" or $tlist->[$i]->{type} eq '+'
+	    my $second_set=get_first_sublist($tlist, $i+1)
+	    $call check_group_ambiguity, $first_set, $second_set
+	    &call do_rule_token_group
+		$call do_rule_optional, $tlist->[$i]
+		$if $i==$#$tlist
+		    $call do_print, "\$(set:skip0=1)"
+		$call do_print, "\$call on_parse_finish, group"
+	$else
+	    $tlist->[$i]->{name}=$name
+	    do_rule($tlist->[$i], $indent)
+
 # Detect: (exp ',')* exp
 subcode: check_group_ambiguity(set1, set2)
     my %temp_hash
@@ -74,57 +130,6 @@ subcode: check_group_ambiguity(set1, set2)
 	print "    first set: ", join(", ", @$(set1)), "\n"
 	print "    second set: ", join(", ", @$(set2)), "\n"
 	die
-
-# ------------------------------------------------
-subcode:: _autoload
-    $sub do_rule($rule, $indent)
-	$call get_rule_name, $rule
-	my $error
-	my $type=$rule->{type}
-	$if !$name
-	    print "do_rule($type-noname): ", print_rule($rule), "\n"
-	$if $type eq "keyword"
-	    $call do_print, "\$call match_keyword, $rule->{value}"
-	$elif $type eq "term"
-	    $call do_print, "\$call match_term, $rule->{value}"
-	$elif $type eq "nonterm"
-	    $call do_print, "parse_$rule->{value}()"
-	    push @topdown_list, $rule->{value}
-	$elif $type eq "group"
-	    my $tlist=$rule->{value}
-	    $for $i=0:@$tlist
-		my $first_set=get_first($tlist->[$i])
-		$if $first_set->[0] eq "EMPTY" or $tlist->[$i]->{type} eq '+'
-		    my $second_set=get_first_sublist($tlist, $i+1)
-		    $call check_group_ambiguity, $first_set, $second_set
-		    &call do_rule_token_group
-			$call do_rule_optional, $tlist->[$i]
-			$call do_print, "\$call on_parse_finish, group"
-		$else
-		    $tlist->[$i]->{name}=$name
-		    do_rule($tlist->[$i], $indent)
-	$elif $type eq "*" or $type eq "?" or $type eq "+"
-	    $call do_rule_optional, $rule
-	$elif $type eq "empty"
-	    print "Error: do_rule(empty)!\n"
-	    die
-	$elif $type eq "alt"
-	    my $rulelist=$rule->{value}
-	    my $i=1
-	    $foreach $r in @$rulelist
-		my $r_name=$name."_$i"
-		$r->{name}=$r_name
-		$call add_rule_name, $r_name
-		$i++
-	    $call do_rule_alt, $rulelist
-	$else
-	    $error="Rule type [$type] not recognized."
-
-	$if $error
-	    print "    "x$indent
-	    print "do_rule errro: $error\n"
-	    print "    "x$indent
-	    print "    in rule: ", print_rule($rule), "\n"
 
 # --------------------------------
 subcode:: _autoload

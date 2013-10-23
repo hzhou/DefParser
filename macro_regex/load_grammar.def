@@ -91,7 +91,7 @@ subcode: push_rule
 	    my ($op1, $op2)=split /,\s*/, $2
 	    $t="$temp_rule_name ($op1 RECURSE $op2 RECURSE)?"
 	$elif $1 eq "postfix"
-	    $t="$temp_rule_name $2*"
+	    $t="$temp_rule_name ($2)*"
 	$elif $1 eq "prefix"
 	    $t="$temp_rule_name | $2 RECURSE"
 	$call push_rule_direct
