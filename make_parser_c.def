@@ -24,11 +24,6 @@ subcode: parse_function_start
     push @fnlist, "parse_$name"
     $call do_print, "fncode: parse_$name"
 
-subcode: do_rule_token_group
-    $call do_print, "push_token_group()"
-    BLOCK
-    $call do_print, "pop_token_group()"
-
 # ===============================================
 subcode: lookahead_fromset
     my $LA="LA"

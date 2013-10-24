@@ -81,11 +81,6 @@ subcode: parse_function_start
     $indent++
     $call do_print, "\$sub parse_$name"
 
-subcode: do_rule_token_group
-    $call do_print, "\$call push_token_group"
-    BLOCK
-    $call do_print, "\$call pop_token_group"
-
 # ===============================================
 subcode: lookahead_fromset
     my $LA="\$token_stack[0]"

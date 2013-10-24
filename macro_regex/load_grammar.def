@@ -93,7 +93,7 @@ subcode: push_rule
 	$elif $1 eq "postfix"
 	    $t="$temp_rule_name ($2)*"
 	$elif $1 eq "prefix"
-	    $t="$temp_rule_name | $2 RECURSE"
+	    $t="$temp_rule_name | ($2) RECURSE"
 	$call push_rule_direct
     $else
 	$call push_rule_direct

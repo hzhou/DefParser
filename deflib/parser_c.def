@@ -33,6 +33,11 @@ fncode: pop_token_group
     $if n_save_count>0
 	n_token_count++
 
+subcode: do_token_group
+    $(allow_recurse:10)
+    push_token_group()
+    BLOCK
+    pop_token_group()
 # ----
 subcode: push_ast
     push_token((struct ast *)$(ast))
@@ -139,24 +144,35 @@ subcode: match_error
 	print "Parse error line %d: Expecting T_$(name), Got %s\n", prog_line, get_lex_name($(token))
     exit(1)
 
-subcode: match_keyword(name)
-    $call look_ahead, 1
-    $if $(token)==T_$(name)
+subcode: match_keyword(name, skip_lookahead)
+    $(if:!skip_lookahead)
+	$call look_ahead, 1
+	$if $(token)==T_$(name)
+	    grab_token($(token))
+	    $call consume_token
+	$else
+	    $call match_error
+    $(else)
 	grab_token($(token))
 	$call consume_token
-    $else
-	$call match_error
 
-subcode: match_term(name)
-    $call look_ahead, 1
-    $if $(token)==T_$(name)
+subcode: match_term(name, skip_lookahead)
+    $(if:!skip_lookahead)
+	$call look_ahead, 1
+	$if $(token)==T_$(name)
+	    $(if:hascode:on_$(name))
+		$call on_$(name)
+	    $(else)
+		grab_token($(token))
+	    $call consume_token
+	$else
+	    $call match_error
+    $(else)
 	$(if:hascode:on_$(name))
 	    $call on_$(name)
 	$(else)
 	    grab_token($(token))
 	$call consume_token
-    $else
-	$call match_error
 
 # ----
 subcode:: _autoload
@@ -185,12 +201,13 @@ subcode: on_parse_finish(name)
     $(if:hascode:on_$(name))
 	$call @on_$(name)
     $(else)
-	$(if:skip0)
-	    $if n_token_count>1
-		concat_ast_group(G_$(name))
-	$(else)
-	    $if n_token_count!=1
-		concat_ast_group(G_$(name))
+	$(if:!skip1)
+	    $(if:skip0)
+		$if n_token_count>1
+		    concat_ast_group(G_$(name))
+	    $(else)
+		$if n_token_count!=1
+		    concat_ast_group(G_$(name))
 
 # ---- Debug Routines ------------------------------------
 subcode: end_of_prog_check

@@ -12,6 +12,7 @@ subcode: parse_grammar
 	$call parse_function_start
 	$indent++
 	$call do_print, "\$call \@debug_parse_start, $name"
+	my $skip_lookahead=0
 	$call do_rule_alt, $rulelist
 
 	$call do_print_ln
@@ -24,16 +25,16 @@ subcode: init_debug
 
 # ------------------------------------------------
 subcode:: _autoload
-    $sub do_rule($rule, $indent)
+    $sub do_rule($rule, $indent, $skip_lookahead)
 	$call get_rule_name, $rule
 	my $error
 	my $type=$rule->{type}
 	$if !$name
 	    print "do_rule($type-noname): ", print_rule($rule), "\n"
 	$if $type eq "keyword"
-	    $call do_print, "\$call match_keyword, $rule->{value}"
+	    $call do_print, "\$call match_keyword, $rule->{value}, $skip_lookahead"
 	$elif $type eq "term"
-	    $call do_print, "\$call match_term, $rule->{value}"
+	    $call do_print, "\$call match_term, $rule->{value}, $skip_lookahead"
 	$elif $type eq "nonterm"
 	    $call do_print, "parse_$rule->{value}()"
 	    push @topdown_list, $rule->{value}
@@ -41,7 +42,10 @@ subcode:: _autoload
 	    my $tlist=$rule->{value}
 	    $call do_rule_group
 	$elif $type eq "*" or $type eq "?" or $type eq "+"
+	    $call do_print, "\&call do_token_group"
+	    $indent++
 	    $call do_rule_optional, $rule
+	    $indent--
 	$elif $type eq "empty"
 	    print "Error: do_rule(empty)!\n"
 	    die
@@ -64,16 +68,28 @@ subcode:: _autoload
 	    print "    in rule: ", print_rule($rule), "\n"
 
 # ----------------------------------------------------
+subcode: do_rule_alt_simple
+    my $flag_simple=1
+    $foreach $r in @$(rulelist)
+	$if !($r->{type} eq "keyword" or $r->{type} eq "term")
+	    $flag_simple=0
+    $if $flag_simple
+	$call do_print, "\$call look_ahead, 1"
+
 subcode: do_rule_alt(rulelist)
-    &call do_rule_token_group
-	$if @$(rulelist)==1
-	    $call do_rule_finish, $(rulelist)->[0]
-	$else
-	    $call check_left_factors, $(rulelist)
-	    my @i_list
-	    $for $i=0:@$(rulelist)
-		push @i_list, $i
-	    do_rule_pre_factor(0, $(rulelist), \@i_list, $indent)
+    $call do_print, "\&call do_token_group"
+    $indent++
+    $if @$(rulelist)==1
+	my $k=0
+	$call do_print, "\$call look_ahead, 1"
+	$call do_rule_finish, $(rulelist)->[0]
+    $else
+	$call check_left_factors, $(rulelist)
+	my @i_list
+	$for $i=0:@$(rulelist)
+	    push @i_list, $i
+	do_rule_pre_factor(0, $(rulelist), \@i_list, $indent)
+    $indent--
 
 subcode: do_rule_optional(r)
     my $r=$(r)
@@ -87,7 +103,7 @@ subcode: do_rule_optional(r)
 	$call do_print, "    break"
 	$r=$r->{value}
 	$r->{name}=$name
-	do_rule($r, $indent)
+	do_rule($r, $indent, 1)
 	$indent--
     $else
 	$if $r->{type} eq "?"
@@ -96,7 +112,7 @@ subcode: do_rule_optional(r)
 	$call do_print, "\$if $lookahead"
 	$indent++
 	$r->{name}=$name
-	do_rule($r, $indent)
+	do_rule($r, $indent, 1)
 	$indent--
 
 subcode: do_rule_group
@@ -105,14 +121,19 @@ subcode: do_rule_group
 	$if $first_set->[0] eq "EMPTY" or $tlist->[$i]->{type} eq '+'
 	    my $second_set=get_first_sublist($tlist, $i+1)
 	    $call check_group_ambiguity, $first_set, $second_set
-	    &call do_rule_token_group
-		$call do_rule_optional, $tlist->[$i]
-		$if $i==$#$tlist
-		    $call do_print, "\$(set:skip0=1)"
-		$call do_print, "\$call on_parse_finish, group"
+	    $call do_print, "\&call do_token_group"
+	    $indent++
+	    $call do_rule_optional, $tlist->[$i]
+	    $if $i>0 and $i==$#$tlist and ($tlist->[$i]->{type} eq "*" or $tlist->[$i]->{type} eq "?")
+		$call do_print, "\$(set:skip0=1)"
+	    $call do_print, "\$call on_parse_finish, group"
+	    $indent--
 	$else
 	    $tlist->[$i]->{name}=$name
-	    do_rule($tlist->[$i], $indent)
+	    $if $i==0
+		do_rule($tlist->[$i], $indent, $skip_lookahead)
+	    $else
+		do_rule($tlist->[$i], $indent, 0)
 
 # Detect: (exp ',')* exp
 subcode: check_group_ambiguity(set1, set2)
@@ -196,14 +217,16 @@ subcode: do_rule_factor
     my $i=0
     $while $i<@$rlist and $rlist->[$i]->{factor} eq $factor
 	$rlist->[$i]->{name}=$name
-	do_rule($rlist->[$i], $indent)
+	do_rule($rlist->[$i], $indent, 0)
 	$i++
 
 subcode: do_rule_finish(rule)
-    do_rule($(rule), $indent)
+    do_rule($(rule), $indent, 1)
     $call get_rule_name, $(rule)
     $if !$name
 	$name="group"
+    $if $k==0 and $(rule)->{type} ne "group"
+	$call do_print, "\$(set:skip1=1)"
     $call do_print, "\$call on_parse_finish, $name"
     $call do_print, "\$call \@debug_parse_finish, $name"
 
